@@ -95,6 +95,10 @@ Config.Music = {
 | More or fewer keys | `Keys` per difficulty (max is 8, one per room) |
 | Bigger hotel | `RoomsPerSide` (more rooms) |
 | Rarer or more generous relics | `RarityWeights` and `RelicRolls` per difficulty |
+| Give players a longer or shorter head start when the ghost spots them | `GhostNoticeTime` (seconds it freezes and reaches out first) |
+| Make long chases more frantic | `GhostFrenzyRate` and `GhostFrenzyMax` (how much faster it gets the longer it hunts you) |
+| Change how quickly it speeds up and stops | `GhostAcceleration` |
+| Change how far its "presence" is felt (lights flickering) | `GhostPresenceRadius` |
 | Make cupboards safer or deadlier | `HideCheckChance` per difficulty (0 = never checked, 1 = always), `HideCheckRadius` |
 | Add a relic | Copy a line in `Config.Relics` and give it a unique `Id` (letters/numbers only) |
 | Shorter lobby wait | `IntermissionTime` |

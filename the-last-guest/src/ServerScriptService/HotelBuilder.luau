@@ -380,6 +380,7 @@ function HotelBuilder.build()
 	return {
 		Folder = folder,
 		Cupboards = cupboards, -- one per room; players can hide inside
+		Lights = lights, -- every lamp light; the ghost dims the ones near it
 		KeySpots = keySpots, -- list of rooms, each a list of positions a key can lie
 		PatrolPoints = patrolPoints, -- floor positions the ghost wanders between
 		PlayerSpawns = playerSpawns,

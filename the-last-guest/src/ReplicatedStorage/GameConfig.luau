@@ -34,6 +34,11 @@ Config.GhostSearchTime = 7 -- seconds it searches where it last saw you
 Config.GhostPatrolSpeedScale = 0.6 -- patrol speed = GhostSpeed * this
 Config.GhostSearchSpeedScale = 0.85
 Config.GhostThinkInterval = 0.35 -- how often the ghost makes decisions
+Config.GhostNoticeTime = 0.7 -- seconds it freezes and reaches toward you when it first spots you (your head start)
+Config.GhostAcceleration = 18 -- studs/second gained per second (it slows down twice as fast)
+Config.GhostFrenzyRate = 0.02 -- extra speed per second while chasing (0.02 = +2% every second)
+Config.GhostFrenzyMax = 1.25 -- the most it can speed up (1.25 = 25% faster)
+Config.GhostPresenceRadius = 24 -- studs: lamps this close to the ghost flicker and dim
 Config.HideCheckRadius = 8 -- studs: how close the ghost must get to a cupboard before it may check inside
 Config.HideCheckCooldown = 12 -- seconds before the ghost can check the same cupboard again
 
