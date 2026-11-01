@@ -12,7 +12,33 @@ This folder holds the scripts. **The scripts build the lobby, the hotel, the gho
 2. Open Studio, click **New**, and choose the **Baseplate** template.
 3. Turn on the two panels you'll use all the time: open the **View** tab and click **Explorer** and **Properties** (also **Output**, which shows errors).
 
-## Part 2: Create the scripts
+## Part 2 (easiest): import the scripts, no copy-paste
+
+Copying 8 scripts by hand is easy to get wrong (a script with the wrong code in it gives confusing errors). Use the import files instead. They put every script in the right place, with the right name and type.
+
+1. **Start clean.** In Studio's Explorer, delete every old game script: `GameConfig`, `GhostModel` (in `ReplicatedStorage`), `GameManager`, `Ghost`, `HotelBuilder`, `PlayerData` (in `ServerScriptService`), and `HUD`, `Cutscene` (in `StarterPlayer > StarterPlayerScripts`). Click one, hold **Ctrl** and click the rest, then press **Delete**. Leave the other things in Explorer alone.
+2. **Download the three files** in the `studio-import` folder on GitHub (open each one and click the **download** arrow at the top right of the file). Save them somewhere you can find, like your Desktop.
+3. **Import each one into its own place.** Right-click the place in Explorer, choose **Insert from File...**, and pick the file:
+
+| Right-click this in Explorer | Insert this file |
+|---|---|
+| `ReplicatedStorage` | `1-ReplicatedStorage.rbxmx` |
+| `ServerScriptService` | `2-ServerScriptService.rbxmx` |
+| `StarterPlayer` > `StarterPlayerScripts` | `3-StarterPlayerScripts.rbxmx` |
+
+4. Check Explorer now shows exactly this, and nothing twice:
+```
+ReplicatedStorage:        GameConfig, GhostModel
+ServerScriptService:      GameManager, Ghost, HotelBuilder, PlayerData
+StarterPlayerScripts:     HUD, Cutscene
+```
+5. Press **Play**.
+
+When I update the game I will also update these files, so you only repeat steps 1 to 3.
+
+If you prefer to copy and paste by hand, use Part 2 below instead.
+
+## Part 2 (by hand): create the scripts
 
 In the **Explorer** panel, hover over a folder-like item (for example `ServerScriptService`) and click the small **+** that appears. Pick the script type. Then rename it: click it, press **F2**, type the name, press Enter. **Names are case-sensitive and must match exactly.**
 

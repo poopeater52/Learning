@@ -1,0 +1,397 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+<Meta name="ExplicitAutoJoints">true</Meta>
+<Item class="ModuleScript" referent="RBX0">
+<Properties>
+<string name="Name">GameConfig</string>
+<ProtectedString name="Source"><![CDATA[-- GameConfig (ModuleScript in ReplicatedStorage)
+-- Every number that controls the game lives here. To balance the game,
+-- change values in this file; the other scripts read from it.
+
+local Config = {}
+
+-- Rounds ------------------------------------------------------------------
+Config.MinPlayers = 1 -- 1 so you can test alone. Raise to 2+ when you launch.
+Config.IntermissionTime = 25 -- seconds in the lobby (voting time) between nights
+Config.GhostWakeDelay = 12 -- seconds of calm before the ghost wakes up
+Config.EndScreenTime = 8 -- seconds the result is shown
+
+-- Lobby ---------------------------------------------------------------------
+Config.LobbyCenter = Vector3.new(0, 500, 0) -- high above the hotel so they never overlap
+
+-- Hotel size (studs) --------------------------------------------------------
+Config.RoomsPerSide = 4 -- 4 rooms on each side of the corridor = 8 rooms
+Config.RoomWidth = 24
+Config.RoomDepth = 22
+Config.CorridorWidth = 12
+Config.WallHeight = 14
+Config.DoorWidth = 8
+Config.DoorHeight = 9
+Config.ExitHallLength = 14
+
+-- Players ---------------------------------------------------------------------
+Config.PlayerWalkSpeed = 16
+Config.ForceFirstPerson = true -- first person during a night (scarier, flashlight points where you look)
+
+-- Ghost -----------------------------------------------------------------------
+Config.GhostCatchRange = 4.5 -- studs: closer than this and you are caught
+Config.GhostStunTime = 1.5 -- seconds the ghost pauses after catching someone
+Config.GhostSearchTime = 7 -- seconds it searches where it last saw you
+Config.GhostPatrolSpeedScale = 0.6 -- patrol speed = GhostSpeed * this
+Config.GhostSearchSpeedScale = 0.85
+Config.GhostThinkInterval = 0.35 -- how often the ghost makes decisions
+Config.GhostNoticeTime = 0.7 -- seconds it freezes and reaches toward you when it first spots you (your head start)
+Config.GhostAcceleration = 18 -- studs/second gained per second (it slows down twice as fast)
+Config.GhostFrenzyRate = 0.02 -- extra speed per second while chasing (0.02 = +2% every second)
+Config.GhostFrenzyMax = 1.25 -- the most it can speed up (1.25 = 25% faster)
+Config.GhostPresenceRadius = 24 -- studs: lamps this close to the ghost flicker and dim
+Config.HideCheckRadius = 8 -- studs: how close the ghost must get to a cupboard before it may check inside
+Config.HideCheckCooldown = 12 -- seconds before the ghost can check the same cupboard again
+
+-- Flashlight battery ---------------------------------------------------------------------
+Config.BatteryPickup = 50 -- percent of battery one found battery restores
+Config.LowBattery = 20 -- below this percent the beam flickers and a warning appears
+Config.DarkSightScale = 0.6 -- the ghost sees you from this fraction of its normal range when your torch is off or dead
+
+-- Escape cutscene -----------------------------------------------------------------------
+Config.CutsceneTime = 12 -- seconds the "You Escaped" cutscene lasts
+
+-- Music --------------------------------------------------------------------------------
+-- Paste the Roblox asset id of each track here, like "rbxassetid://1234567890".
+-- Leave a track as "" to play nothing for it. See README Part 5 for how to get ids.
+Config.Music = {
+	Volume = 0.5,
+	Lobby = "", -- eerie music box: plays in the lobby and between nights
+	Night = "", -- dark ambience: plays during a night
+	Chase = "", -- pounding pulse: fades in as the ghost hunts or gets close
+}
+
+-- Saving ----------------------------------------------------------------------
+-- Saving only works in a PUBLISHED game with "Enable Studio Access to API Services" turned on.
+-- The game still plays fine without it, progress just won't be remembered.
+Config.DataStoreName = "TheLastGuest_v1"
+Config.AutosaveInterval = 90
+
+-- Difficulties ------------------------------------------------------------------
+-- Keys = keys to find, TimeLimit = seconds, GhostSpeed = studs/second while chasing
+-- (players walk at 16), GhostSight = how far it can see you, GhostHear = how close
+-- you can be before it hears you even through walls, HuntChance = how often it
+-- walks straight toward a player instead of wandering, HideCheckChance = chance it opens a cupboard
+-- it walks past with someone hiding inside, RelicRolls = relics won on escape.
+Config.DifficultyOrder = { "Easy", "Normal", "Nightmare" }
+Config.Difficulties = {
+	Easy = {
+		Color = Color3.fromRGB(80, 200, 110),
+		Keys = 3,
+		Batteries = 5, -- batteries hidden in the hotel
+		BatterySeconds = 200, -- seconds a full battery lasts with the torch on
+		TimeLimit = 480,
+		GhostSpeed = 10,
+		GhostSight = 40,
+		GhostHear = 9,
+		HuntChance = 0,
+		HideCheckChance = 0.2,
+		RelicRolls = 1,
+		RarityWeights = { Common = 70, Uncommon = 22, Rare = 7, Epic = 1, Legendary = 0.1 },
+	},
+	Normal = {
+		Color = Color3.fromRGB(240, 190, 60),
+		Keys = 4,
+		Batteries = 4,
+		BatterySeconds = 150,
+		TimeLimit = 390,
+		GhostSpeed = 13,
+		GhostSight = 60,
+		GhostHear = 12,
+		HuntChance = 0.15,
+		HideCheckChance = 0.4,
+		RelicRolls = 2,
+		RarityWeights = { Common = 50, Uncommon = 30, Rare = 14, Epic = 5, Legendary = 1 },
+	},
+	Nightmare = {
+		Color = Color3.fromRGB(220, 50, 50),
+		Keys = 5,
+		Batteries = 3,
+		BatterySeconds = 110,
+		TimeLimit = 330,
+		GhostSpeed = 15,
+		GhostSight = 80,
+		GhostHear = 15,
+		HuntChance = 0.35,
+		HideCheckChance = 0.6,
+		RelicRolls = 3,
+		RarityWeights = { Common = 30, Uncommon = 30, Rare = 24, Epic = 12, Legendary = 4 },
+	},
+}
+
+-- Relics ------------------------------------------------------------------------
+-- Relics are collectibles only. They never make you stronger, so there is nothing to
+-- "win" by buying them. Id must use only letters and numbers (no spaces).
+Config.RarityOrder = { "Common", "Uncommon", "Rare", "Epic", "Legendary" }
+Config.Rarities = {
+	Common = { Color = Color3.fromRGB(190, 190, 190) },
+	Uncommon = { Color = Color3.fromRGB(90, 200, 120) },
+	Rare = { Color = Color3.fromRGB(80, 150, 255) },
+	Epic = { Color = Color3.fromRGB(180, 90, 255) },
+	Legendary = { Color = Color3.fromRGB(255, 185, 50) },
+}
+
+Config.Relics = {
+	{ Id = "CrackedMusicBox", Name = "Cracked Music Box", Rarity = "Common", Blurb = "It still plays, but only one note." },
+	{ Id = "RustyRoomKey", Name = "Rusty Room Key", Rarity = "Common", Blurb = "Opens a room that no longer exists." },
+	{ Id = "FadedPhotograph", Name = "Faded Photograph", Rarity = "Common", Blurb = "Everyone in it is facing away." },
+	{ Id = "MeltedCandle", Name = "Melted Candle", Rarity = "Common", Blurb = "Warm to the touch. Nobody lit it." },
+	{ Id = "PorcelainDoll", Name = "Porcelain Doll", Rarity = "Uncommon", Blurb = "Its eyes were open when you picked it up." },
+	{ Id = "BellhopsCap", Name = "Bellhop's Cap", Rarity = "Uncommon", Blurb = "Still has a name tag: 'Ask for Arthur'." },
+	{ Id = "TarnishedLocket", Name = "Tarnished Locket", Rarity = "Uncommon", Blurb = "The hinge creaks when no one is near." },
+	{ Id = "GuestLedger", Name = "Guest Ledger", Rarity = "Rare", Blurb = "Your name is already in it." },
+	{ Id = "ClockHand", Name = "Grandfather Clock Hand", Rarity = "Rare", Blurb = "Points at whoever is closest." },
+	{ Id = "MirrorShard", Name = "Haunted Mirror Shard", Rarity = "Rare", Blurb = "The reflection is a second behind." },
+	{ Id = "PhantomMonocle", Name = "Phantom's Monocle", Rarity = "Epic", Blurb = "Through it, the walls are thinner." },
+	{ Id = "SilverBell", Name = "Silver Service Bell", Rarity = "Epic", Blurb = "Ring it once. Do not ring it twice." },
+	{ Id = "LastGuestRing", Name = "The Last Guest's Ring", Rarity = "Legendary", Blurb = "Too big for any finger in the hotel." },
+	{ Id = "HotelHeart", Name = "Heart of the Hotel", Rarity = "Legendary", Blurb = "It beats slower when you hold it." },
+}
+
+-- Helpers shared by the server and the client ------------------------------------
+
+function Config.GetRelic(id)
+	for _, relic in Config.Relics do
+		if relic.Id == id then
+			return relic
+		end
+	end
+	return nil
+end
+
+-- Picks a random relic. Harder difficulties make rarer relics more likely.
+function Config.RollRelic(difficultyName)
+	local weights = Config.Difficulties[difficultyName].RarityWeights
+	local total = 0
+	for _, rarity in Config.RarityOrder do
+		total += weights[rarity] or 0
+	end
+
+	local roll = math.random() * total
+	local chosen = "Common"
+	for _, rarity in Config.RarityOrder do
+		local weight = weights[rarity] or 0
+		roll -= weight
+		if weight > 0 and roll <= 0 then
+			chosen = rarity
+			break
+		end
+	end
+
+	local pool = {}
+	for _, relic in Config.Relics do
+		if relic.Rarity == chosen then
+			table.insert(pool, relic)
+		end
+	end
+	return pool[math.random(#pool)]
+end
+
+return Config
+]]></ProtectedString>
+</Properties>
+</Item>
+<Item class="ModuleScript" referent="RBX1">
+<Properties>
+<string name="Name">GhostModel</string>
+<ProtectedString name="Source"><![CDATA[-- GhostModel (ModuleScript in ReplicatedStorage)
+-- The ghost's body, shared by the game (Ghost, on the server) and the escape cutscene (on the client),
+-- so it looks the same in both: a gaunt figure in a tattered pale dress with long black hair,
+-- hollow eyes and too-long arms.
+--
+-- Only the invisible Root part is moved. Every visible part hangs off it on a Motor6D, which
+-- GhostModel.pose re-aims to make the dress flutter, the hair sway and the arms reach (or wave).
+
+local GhostModel = {}
+
+local NECK = CFrame.new(0, 3.0, 0) -- where the head joins the body, relative to Root
+
+local DRESS = Color3.fromRGB(226, 230, 236)
+local SKIN = Color3.fromRGB(205, 214, 220)
+local HAIR = Color3.fromRGB(12, 10, 12)
+
+-- Returns model, root, limbs. Move the ghost by setting root.CFrame, and animate it with GhostModel.pose.
+function GhostModel.build(position)
+	local model = Instance.new("Model")
+	model.Name = "Ghost"
+
+	local root = Instance.new("Part")
+	root.Name = "Root"
+	root.Size = Vector3.new(1, 1, 1)
+	root.Transparency = 1
+	root.Anchored = true
+	root.CanCollide = false
+	root.CanQuery = false
+	root.CanTouch = false
+	root.CFrame = CFrame.new(position)
+	root.Parent = model
+	model.PrimaryPart = root
+
+	local limbs = {}
+
+	-- Adds one visible part joined to Root by a Motor6D.
+	-- attach: the joint position (relative to the body, or to the neck when group is "head")
+	-- localOffset: where the part sits relative to the joint
+	-- kind: "static", "flutter" (hem and hair sway) or "arm"; param: sway size, or arm side (-1/1)
+	local function limb(name, shape, size, attach, localOffset, color, material, transparency, kind, group, param)
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Shape = shape
+		part.Size = size
+		part.Color = color
+		part.Material = material
+		part.Transparency = transparency
+		part.Anchored = false
+		part.Massless = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.CastShadow = false
+		part.CFrame = root.CFrame * attach * localOffset
+		part.Parent = model
+
+		local motor = Instance.new("Motor6D")
+		motor.Part0 = root
+		motor.Part1 = part
+		motor.C0 = attach * localOffset
+		motor.Parent = part
+
+		table.insert(limbs, {
+			Motor = motor,
+			Attach = attach,
+			Local = localOffset,
+			Kind = kind,
+			Group = group or "body",
+			Phase = math.random() * math.pi * 2,
+			Param = param or 0,
+		})
+		return part
+	end
+
+	local BLOCK, BALL, CYLINDER = Enum.PartType.Block, Enum.PartType.Ball, Enum.PartType.Cylinder
+	local PLASTIC = Enum.Material.SmoothPlastic
+	local NONE = CFrame.new()
+
+	-- The dress: three stacked cylinders (a cylinder's axis is X, so turn it upright)
+	local function dressPart(name, y, height, diameter, transparency)
+		limb(name, CYLINDER, Vector3.new(height, diameter, diameter), NONE, CFrame.new(0, y, 0) * CFrame.Angles(0, 0, math.pi / 2), DRESS, PLASTIC, transparency, "static")
+	end
+	dressPart("Skirt", -1.0, 2.2, 3.4, 0.4)
+	dressPart("Waist", 1.0, 1.8, 1.9, 0.35)
+	dressPart("Chest", 2.3, 1.0, 2.3, 0.35)
+
+	-- Ragged strips hanging from the hem, fluttering as it moves
+	for i = 1, 12 do
+		local angle = (i / 12) * math.pi * 2
+		local position2 = Vector3.new(math.cos(angle) * 1.62, -2.0, math.sin(angle) * 1.62)
+		local attach = CFrame.lookAt(position2, position2 + Vector3.new(math.cos(angle), 0, math.sin(angle)))
+		local length = 1.0 + 0.35 * math.random()
+		limb("Hem", BLOCK, Vector3.new(0.5, length, 0.06), attach, CFrame.new(0, -length / 2, 0), DRESS, PLASTIC, 0.5, "flutter", "body", 0.18)
+	end
+
+	-- Long, thin arms with a hand and three fingers each
+	for _, side in { -1, 1 } do
+		local shoulder = CFrame.new(side * 1.3, 2.5, 0)
+		limb("Arm", BLOCK, Vector3.new(0.3, 4.4, 0.3), shoulder, CFrame.new(0, -2.2, 0), SKIN, PLASTIC, 0.2, "arm", "body", side)
+		limb("Hand", BLOCK, Vector3.new(0.5, 0.7, 0.28), shoulder, CFrame.new(0, -4.7, 0), SKIN, PLASTIC, 0.2, "arm", "body", side)
+		for finger = -1, 1 do
+			limb("Finger", BLOCK, Vector3.new(0.07, 0.9, 0.07), shoulder, CFrame.new(finger * 0.16, -5.4, 0) * CFrame.Angles(0, 0, -finger * 0.12), SKIN, PLASTIC, 0.15, "arm", "body", side)
+		end
+	end
+
+	-- Head (turns and tilts on its own). Everything in the "head" group is positioned from the neck.
+	local head = limb("Head", BALL, Vector3.new(1.5, 1.5, 1.5), NONE, CFrame.new(0, 0.85, 0), SKIN, PLASTIC, 0.15, "static", "head")
+	limb("EyeSocketLeft", BALL, Vector3.new(0.42, 0.42, 0.42), NONE, CFrame.new(-0.3, 1.0, -0.55), Color3.fromRGB(5, 3, 4), PLASTIC, 0, "static", "head")
+	limb("EyeSocketRight", BALL, Vector3.new(0.42, 0.42, 0.42), NONE, CFrame.new(0.3, 1.0, -0.55), Color3.fromRGB(5, 3, 4), PLASTIC, 0, "static", "head")
+	limb("EyeLeft", BALL, Vector3.new(0.16, 0.16, 0.16), NONE, CFrame.new(-0.3, 1.0, -0.66), Color3.fromRGB(255, 40, 30), Enum.Material.Neon, 0, "static", "head")
+	limb("EyeRight", BALL, Vector3.new(0.16, 0.16, 0.16), NONE, CFrame.new(0.3, 1.0, -0.66), Color3.fromRGB(255, 40, 30), Enum.Material.Neon, 0, "static", "head")
+	limb("Mouth", BLOCK, Vector3.new(0.5, 0.09, 0.1), NONE, CFrame.new(0, 0.45, -0.62), Color3.fromRGB(5, 3, 4), PLASTIC, 0, "static", "head")
+
+	-- Hair: a cap over the back and top of the head, and long strands that leave the face clear
+	limb("HairCap", BALL, Vector3.new(1.7, 1.7, 1.7), NONE, CFrame.new(0, 0.95, 0.2), HAIR, PLASTIC, 0, "static", "head")
+	for i = 1, 16 do
+		local angle = (i / 16) * math.pi * 2
+		local fromFront = math.abs((angle + math.pi / 2 + math.pi) % (math.pi * 2) - math.pi) -- front is -Z
+		if fromFront > 0.9 then
+			local position2 = Vector3.new(math.cos(angle) * 0.85, 1.2, math.sin(angle) * 0.85)
+			local attach = CFrame.lookAt(position2, position2 + Vector3.new(math.cos(angle), 0, math.sin(angle))) * CFrame.Angles(0.12, 0, 0)
+			local length = 3.8 + math.random() * 2
+			limb("Hair", BLOCK, Vector3.new(0.3, length, 0.05), attach, CFrame.new(0, -length / 2, 0), HAIR, PLASTIC, 0.05, "flutter", "head", 0.1)
+		end
+	end
+
+	-- A faint red glow from the head so players see it coming, and a cold pale glow around the body
+	local redGlow = Instance.new("PointLight")
+	redGlow.Color = Color3.fromRGB(255, 60, 60)
+	redGlow.Brightness = 1.0
+	redGlow.Range = 12
+	redGlow.Parent = head
+
+	local coldGlow = Instance.new("PointLight")
+	coldGlow.Color = Color3.fromRGB(170, 200, 255)
+	coldGlow.Brightness = 0.5
+	coldGlow.Range = 10
+	coldGlow.Parent = root
+
+	-- Cold mist trailing behind it
+	local mist = Instance.new("ParticleEmitter")
+	mist.Texture = "rbxasset://textures/particles/smoke_main.dds"
+	mist.Rate = 14
+	mist.Lifetime = NumberRange.new(1.6, 2.6)
+	mist.Speed = NumberRange.new(0.2, 0.8)
+	mist.Drag = 1
+	mist.Acceleration = Vector3.new(0, 0.4, 0)
+	mist.LightEmission = 0.15
+	mist.Color = ColorSequence.new(Color3.fromRGB(190, 205, 225))
+	mist.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2), NumberSequenceKeypoint.new(1, 5) })
+	mist.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.2, 0.82),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	mist.Parent = root
+
+	return model, root, limbs
+end
+
+-- Animates the ghost. p holds:
+--   Lean (radians, negative leans forward), Reach (0..1 arms raised forward), HeadYaw, HeadPitch,
+--   Speed (studs/second, makes the hem and hair flutter more), Wave (0..1: how much the right arm waves hello)
+function GhostModel.pose(limbs, p, now)
+	local bodyBase = CFrame.Angles(p.Lean, 0, 0)
+	local headBase = bodyBase * NECK * CFrame.Angles(p.HeadPitch, p.HeadYaw, math.sin(now * 0.7) * 0.05)
+	local flutterScale = 1 + p.Speed * 0.1
+
+	for _, limb in limbs do
+		local base = limb.Group == "head" and headBase or bodyBase
+		local rotation = CFrame.new()
+		if limb.Kind == "flutter" then
+			rotation = CFrame.Angles(
+				math.sin(now * 1.9 + limb.Phase) * limb.Param * flutterScale,
+				0,
+				math.cos(now * 1.4 + limb.Phase) * limb.Param * 0.5 * flutterScale
+			)
+		elseif limb.Kind == "arm" then
+			local raise = p.Reach * 1.3 + math.sin(now * 1.1 + limb.Phase) * 0.06
+			local out = limb.Param * (0.14 + math.sin(now * 0.9 + limb.Phase) * 0.04)
+			local wave = limb.Param == 1 and (p.Wave or 0) or 0
+			if wave > 0 then
+				-- The right arm lifts high and swings from side to side, blending in as Wave goes 0 -> 1
+				raise += (2.7 + math.sin(now * 3) * 0.1 - raise) * wave
+				out += (0.45 * math.sin(now * 7) - out) * wave
+			end
+			rotation = CFrame.Angles(raise, 0, out)
+		end
+		limb.Motor.C0 = base * limb.Attach * rotation * limb.Local
+	end
+end
+
+return GhostModel
+]]></ProtectedString>
+</Properties>
+</Item>
+</roblox>

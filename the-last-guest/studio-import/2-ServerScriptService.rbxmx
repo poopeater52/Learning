@@ -1,0 +1,1782 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
+<Meta name="ExplicitAutoJoints">true</Meta>
+<Item class="Script" referent="RBX0">
+<Properties>
+<string name="Name">GameManager</string>
+<ProtectedString name="Source"><![CDATA[-- GameManager (Script in ServerScriptService)
+-- Runs the whole game: builds the lobby, lets players vote on a difficulty, builds the hotel,
+-- hands out keys, wakes the ghost, and decides who escaped.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local HotelBuilder = require(script.Parent:WaitForChild("HotelBuilder"))
+local Ghost = require(script.Parent:WaitForChild("Ghost"))
+local PlayerData = require(script.Parent:WaitForChild("PlayerData"))
+
+Players.RespawnTime = 4
+
+-- Messages to the players' screens ---------------------------------------------
+
+local function makeRemote(name)
+	local remote = Instance.new("RemoteEvent")
+	remote.Name = name
+	remote.Parent = ReplicatedStorage
+	return remote
+end
+
+local JumpScare = makeRemote("JumpScare")
+local Notify = makeRemote("Notify") -- Notify:FireClient(player, text, color)
+local Cutscene = makeRemote("Cutscene") -- Cutscene:FireClient(player, subtitle, color, title): the escape cutscene
+local FlashlightToggle = makeRemote("FlashlightToggle") -- the client asks to turn its torch on or off
+
+-- The HUD reads everything about the current night from attributes on this folder.
+local state = Instance.new("Folder")
+state.Name = "GameState"
+state.Parent = ReplicatedStorage
+
+local function setState(values)
+	for key, value in values do
+		state:SetAttribute(key, value)
+	end
+end
+
+setState({ Status = "Intermission", Message = "Loading...", Countdown = 0, KeysFound = 0, KeysNeeded = 0, Difficulty = "" })
+
+FlashlightToggle.OnServerEvent:Connect(function(player, on)
+	if typeof(on) ~= "boolean" then
+		return
+	end
+	if on and (player:GetAttribute("Battery") or 0) <= 0 then
+		return -- a dead torch can't be switched on
+	end
+	player:SetAttribute("FlashlightOn", on)
+end)
+
+-- Lighting: very dark, the flashlight and the lamps do the rest -----------------
+
+Lighting.ClockTime = 0
+Lighting.Brightness = 0
+Lighting.Ambient = Color3.fromRGB(14, 14, 22)
+Lighting.OutdoorAmbient = Color3.fromRGB(14, 14, 22)
+Lighting.FogColor = Color3.fromRGB(8, 8, 12)
+Lighting.FogStart = 20
+Lighting.FogEnd = 160
+Lighting.GlobalShadows = true
+
+-- Lobby --------------------------------------------------------------------------
+
+-- Remove the default baseplate and spawn so players only ever spawn in our lobby.
+local baseplate = workspace:FindFirstChild("Baseplate")
+if baseplate then
+	baseplate:Destroy()
+end
+for _, descendant in workspace:GetDescendants() do
+	if descendant:IsA("SpawnLocation") then
+		descendant:Destroy()
+	end
+end
+
+local function buildLobby()
+	local center = Config.LobbyCenter
+	local folder = Instance.new("Folder")
+	folder.Name = "Lobby"
+	folder.Parent = workspace
+
+	local function part(name, size, position, color, material, transparency)
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Anchored = true
+		p.Size = size
+		p.Position = position
+		p.Color = color
+		p.Material = material
+		p.Transparency = transparency or 0
+		p.TopSurface = Enum.SurfaceType.Smooth
+		p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Parent = folder
+		return p
+	end
+
+	part("Floor", Vector3.new(70, 1, 70), center - Vector3.new(0, 0.5, 0), Color3.fromRGB(45, 32, 28), Enum.Material.WoodPlanks)
+
+	-- Invisible walls so nobody falls off the edge
+	for _, wall in {
+		{ Vector3.new(70, 40, 1), Vector3.new(0, 20, -35.5) },
+		{ Vector3.new(70, 40, 1), Vector3.new(0, 20, 35.5) },
+		{ Vector3.new(1, 40, 72), Vector3.new(-35.5, 20, 0) },
+		{ Vector3.new(1, 40, 72), Vector3.new(35.5, 20, 0) },
+	} do
+		part("EdgeWall", wall[1], center + wall[2], Color3.new(0, 0, 0), Enum.Material.SmoothPlastic, 1)
+	end
+
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "LobbySpawn"
+	spawn.Anchored = true
+	spawn.Neutral = true
+	spawn.Duration = 0
+	spawn.Size = Vector3.new(12, 1, 12)
+	spawn.Position = center + Vector3.new(0, 0.5, 22)
+	spawn.Color = Color3.fromRGB(70, 50, 40)
+	spawn.Material = Enum.Material.Wood
+	spawn.TopSurface = Enum.SurfaceType.Smooth
+	spawn.Parent = folder
+
+	-- Title sign on the far wall (faces +Z, toward the players)
+	local sign = part("TitleSign", Vector3.new(44, 12, 1), center + Vector3.new(0, 10, -34), Color3.fromRGB(20, 14, 14), Enum.Material.Wood)
+	local signGui = Instance.new("SurfaceGui")
+	signGui.Face = Enum.NormalId.Back
+	signGui.PixelsPerStud = 30
+	signGui.Parent = sign
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.fromScale(1, 0.65)
+	title.BackgroundTransparency = 1
+	title.Text = "THE LAST GUEST"
+	title.TextColor3 = Color3.fromRGB(215, 40, 40)
+	title.TextScaled = true
+	title.Font = Enum.Font.Creepster
+	title.Parent = signGui
+	local subtitle = Instance.new("TextLabel")
+	subtitle.Position = UDim2.fromScale(0, 0.65)
+	subtitle.Size = UDim2.fromScale(1, 0.25)
+	subtitle.BackgroundTransparency = 1
+	subtitle.Text = "Stand on a door to vote. Find the keys. Escape the night."
+	subtitle.TextColor3 = Color3.fromRGB(220, 200, 170)
+	subtitle.TextScaled = true
+	subtitle.Font = Enum.Font.SpecialElite
+	subtitle.Parent = signGui
+
+	-- Lamps so the lobby isn't pitch black
+	for _, x in { -22, 0, 22 } do
+		local lamp = part("Lamp", Vector3.new(3, 0.5, 3), center + Vector3.new(x, 18, -4), Color3.fromRGB(255, 226, 170), Enum.Material.Neon)
+		lamp.CanCollide = false
+		local light = Instance.new("PointLight")
+		light.Color = Color3.fromRGB(255, 205, 140)
+		light.Brightness = 1.5
+		light.Range = 40
+		light.Parent = lamp
+	end
+
+	-- Difficulty vote pads
+	local pads = {}
+	local labels = {}
+	for index, name in Config.DifficultyOrder do
+		local difficulty = Config.Difficulties[name]
+		local pad = part(name .. "Pad", Vector3.new(14, 0.4, 14), center + Vector3.new((index - 2) * 22, 0.2, -12), difficulty.Color, Enum.Material.Neon)
+		pads[name] = pad
+
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.fromOffset(240, 100)
+		billboard.StudsOffset = Vector3.new(0, 7, 0)
+		billboard.Parent = pad
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.TextColor3 = difficulty.Color
+		label.TextStrokeTransparency = 0.3
+		label.TextScaled = true
+		label.Font = Enum.Font.Creepster
+		label.Parent = billboard
+		labels[name] = label
+	end
+
+	return {
+		SpawnPosition = spawn.Position + Vector3.new(0, 3, 0),
+		Pads = pads,
+		Labels = labels,
+	}
+end
+
+local lobby = buildLobby()
+
+local function sendToLobby(player)
+	local character = player.Character
+	if character and character.Parent then
+		character:PivotTo(CFrame.new(lobby.SpawnPosition))
+	end
+end
+
+-- Voting -------------------------------------------------------------------------
+
+local function countVotes()
+	local votes = {}
+	for _, name in Config.DifficultyOrder do
+		votes[name] = 0
+	end
+
+	for _, player in Players:GetPlayers() do
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if root then
+			for name, pad in lobby.Pads do
+				local offset = root.Position - pad.Position
+				if math.abs(offset.X) <= pad.Size.X / 2 and math.abs(offset.Z) <= pad.Size.Z / 2 and math.abs(offset.Y) < 8 then
+					votes[name] += 1
+					break
+				end
+			end
+		end
+	end
+	return votes
+end
+
+local function updateVoteLabels()
+	local votes = countVotes()
+	for _, name in Config.DifficultyOrder do
+		local difficulty = Config.Difficulties[name]
+		lobby.Labels[name].Text = string.format("%s\n%d keys - %d votes", string.upper(name), difficulty.Keys, votes[name])
+	end
+	return votes
+end
+
+local function pickDifficulty()
+	local votes = updateVoteLabels()
+	local best = 0
+	for _, count in votes do
+		best = math.max(best, count)
+	end
+	if best == 0 then
+		return "Normal"
+	end
+
+	local tied = {}
+	for _, name in Config.DifficultyOrder do
+		if votes[name] == best then
+			table.insert(tied, name)
+		end
+	end
+	return tied[math.random(#tied)]
+end
+
+local function intermission()
+	while true do
+		while #Players:GetPlayers() < Config.MinPlayers do
+			setState({ Status = "Intermission", Countdown = 0, Message = "Waiting for players..." })
+			updateVoteLabels()
+			task.wait(1)
+		end
+
+		local aborted = false
+		for secondsLeft = Config.IntermissionTime, 1, -1 do
+			if #Players:GetPlayers() < Config.MinPlayers then
+				aborted = true
+				break
+			end
+			setState({ Status = "Intermission", Countdown = secondsLeft, Message = "Stand on a door to vote for the difficulty" })
+			updateVoteLabels()
+			task.wait(0.5)
+			updateVoteLabels()
+			task.wait(0.5)
+		end
+
+		if not aborted then
+			return pickDifficulty()
+		end
+	end
+end
+
+-- A night ---------------------------------------------------------------------------
+
+local inRound = {} -- [Player] = true while that player is still in the hotel and alive
+local hiding = {} -- [Player] = the cupboard they are hiding in
+
+-- Lets a hiding player out: unfreezes them and swings the doors open.
+local function leaveCupboard(player)
+	local cupboard = hiding[player]
+	if not cupboard then
+		return
+	end
+	hiding[player] = nil
+	cupboard.Occupant = nil
+	cupboard.Suspected = false
+	if cupboard.Prompt and cupboard.Prompt.Parent then
+		cupboard.Prompt.ActionText = "Hide"
+	end
+	player:SetAttribute("Hidden", false)
+
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if root then
+		root.Anchored = false
+	end
+
+	cupboard.SetOpen(true)
+	task.delay(3, function()
+		if not cupboard.Occupant then
+			cupboard.SetOpen(false)
+		end
+	end)
+end
+
+local function markOut(player)
+	leaveCupboard(player)
+	if inRound[player] then
+		inRound[player] = nil
+		player:SetAttribute("InRound", false)
+	end
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	hiding[player] = nil
+	inRound[player] = nil
+end)
+
+local function shuffledIndices(count)
+	local list = {}
+	for i = 1, count do
+		list[i] = i
+	end
+	for i = count, 2, -1 do
+		local j = math.random(i)
+		list[i], list[j] = list[j], list[i]
+	end
+	return list
+end
+
+local GREY = Color3.fromRGB(200, 205, 215)
+local RED = Color3.fromRGB(235, 80, 80)
+local GOLD = Color3.fromRGB(255, 215, 100)
+
+local function runRound(difficultyName)
+	local difficulty = Config.Difficulties[difficultyName]
+
+	-- Who is playing: everyone alive right now
+	local participants = {}
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health > 0 and character:FindFirstChild("HumanoidRootPart") then
+			table.insert(participants, player)
+		end
+	end
+	if #participants == 0 then
+		return
+	end
+
+	table.clear(inRound)
+	local connections = {}
+	local roundActive = true
+	local ghost = nil
+	local keysFound = 0
+	local exitOpen = false
+	local escapedCount = 0
+	local watchedCutscene = {} -- players who have already been shown the cutscene this night
+
+	local hotel = HotelBuilder.build()
+	hotel.Folder.Parent = workspace
+
+	for index, player in participants do
+		local character = player.Character
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		humanoid.WalkSpeed = Config.PlayerWalkSpeed
+
+		local position = hotel.PlayerSpawns[(index - 1) % #hotel.PlayerSpawns + 1]
+		character:PivotTo(CFrame.lookAt(position, position + Vector3.new(1, 0, 0)))
+
+		inRound[player] = true
+		player:SetAttribute("InRound", true)
+		player:SetAttribute("Battery", 100)
+		player:SetAttribute("FlashlightOn", true)
+		table.insert(
+			connections,
+			humanoid.Died:Connect(function()
+				markOut(player)
+			end)
+		)
+	end
+
+	setState({
+		Status = "Playing",
+		Difficulty = difficultyName,
+		KeysFound = 0,
+		KeysNeeded = difficulty.Keys,
+		Countdown = difficulty.TimeLimit,
+		Message = "Find the keys to unlock the exit",
+	})
+
+	local function notifyPlayers(text, color)
+		for _, player in participants do
+			if player.Parent then
+				Notify:FireClient(player, text, color)
+			end
+		end
+	end
+
+	notifyPlayers("Night begins on " .. difficultyName .. ". Press F for your flashlight, but its battery drains. Cupboards are hiding spots.", GREY)
+
+	-- Keys: old brass keys lying on tables and beds in several random rooms
+	local allSpots = {}
+	for _, roomSpots in hotel.KeySpots do
+		for _, spot in roomSpots do
+			table.insert(allSpots, spot)
+		end
+	end
+	local spotOrder = shuffledIndices(#allSpots)
+	local nextSpot = 0
+	local function takeSpot() -- each spot is used by at most one key or battery
+		nextSpot += 1
+		return allSpots[spotOrder[nextSpot]]
+	end
+
+	for k = 1, difficulty.Keys do
+		local spot = takeSpot()
+
+		local key = HotelBuilder.newKey()
+		key:PivotTo(CFrame.new(spot) * CFrame.Angles(0, math.random() * math.pi * 2, 0))
+
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Pick up"
+		prompt.ObjectText = "Old Brass Key"
+		prompt.HoldDuration = 0.4
+		prompt.MaxActivationDistance = 8
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = key.PrimaryPart
+
+		local collected = false
+		prompt.Triggered:Connect(function(player)
+			if collected or not inRound[player] or hiding[player] then
+				return
+			end
+			collected = true
+			key:Destroy()
+			keysFound += 1
+			state:SetAttribute("KeysFound", keysFound)
+			notifyPlayers(player.DisplayName .. " found a key (" .. keysFound .. "/" .. difficulty.Keys .. ")", GOLD)
+
+			if keysFound >= difficulty.Keys then
+				exitOpen = true
+				hotel.OpenExit()
+				state:SetAttribute("Message", "The exit is open - RUN!")
+				notifyPlayers("The exit door is unlocked! Get to the green light!", Color3.fromRGB(110, 255, 140))
+			end
+		end)
+		key.Parent = hotel.Folder
+	end
+
+	-- Batteries: the torch drains while it is on, so batteries lie around the hotel too
+	for _ = 1, difficulty.Batteries do
+		local spot = takeSpot()
+		local battery = HotelBuilder.newBattery()
+		battery:PivotTo(CFrame.new(spot + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, math.random() * math.pi * 2, 0))
+
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Pick up"
+		prompt.ObjectText = "Battery"
+		prompt.HoldDuration = 0.3
+		prompt.MaxActivationDistance = 8
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = battery.PrimaryPart
+
+		local collected = false
+		prompt.Triggered:Connect(function(player)
+			if collected or not inRound[player] or hiding[player] then
+				return
+			end
+			collected = true
+			battery:Destroy()
+			local before = player:GetAttribute("Battery") or 0
+			local level = math.min(100, before + Config.BatteryPickup)
+			player:SetAttribute("Battery", level)
+			if before <= 0 then
+				player:SetAttribute("FlashlightOn", true) -- bring a dead torch back to life
+			end
+			Notify:FireClient(player, string.format("Battery found! Flashlight at %d%%", math.floor(level)), GOLD)
+		end)
+		battery.Parent = hotel.Folder
+	end
+
+	-- Cupboards: climb in to hide. The doors shut and the ghost can't see you through them.
+	-- It may still open one it passes, and it always checks the one it saw you go into.
+	for _, cupboard in hotel.Cupboards do
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Hide"
+		prompt.ObjectText = "Cupboard"
+		prompt.HoldDuration = 0.3
+		prompt.MaxActivationDistance = 7
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = cupboard.OpenPoint
+		cupboard.Prompt = prompt
+
+		prompt.Triggered:Connect(function(player)
+			if not inRound[player] then
+				return
+			end
+			if cupboard.Occupant == player then
+				leaveCupboard(player)
+			elseif cupboard.Occupant then
+				Notify:FireClient(player, "Someone is already hiding in here.", GREY)
+			elseif not hiding[player] then
+				local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+				if not root then
+					return
+				end
+				cupboard.Suspected = false
+				cupboard.Occupant = player
+				cupboard.NextCheck = os.clock() + 1.5
+				hiding[player] = cupboard
+				cupboard.SetOpen(false)
+				player.Character:PivotTo(cupboard.HidePosition)
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.Anchored = true
+				player:SetAttribute("Hidden", true)
+				prompt.ActionText = "Leave"
+				if ghost then
+					ghost:OnPlayerHid(player, cupboard)
+				end
+			end
+		end)
+	end
+
+	-- The ghost wakes up after a short calm
+	local function onCatch(player)
+		if not inRound[player] then
+			return
+		end
+		markOut(player)
+		JumpScare:FireClient(player)
+		notifyPlayers(player.DisplayName .. " was caught!", RED)
+		task.delay(0.7, function()
+			local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.Health = 0
+			end
+		end)
+	end
+
+	task.delay(Config.GhostWakeDelay, function()
+		if roundActive then
+			ghost = Ghost.new(hotel, difficultyName, onCatch)
+			ghost:Start()
+			notifyPlayers("Something stirs in the hotel...", RED)
+		end
+	end)
+
+	-- Main loop of the night
+	local endTime = os.clock() + difficulty.TimeLimit
+	local result
+	local lastTick = os.clock()
+	while true do
+		task.wait(0.25)
+		local dt = os.clock() - lastTick
+		lastTick = os.clock()
+
+		-- The torch drains while it is switched on (not while you are hiding)
+		for _, player in participants do
+			if inRound[player] and not hiding[player] and player:GetAttribute("FlashlightOn") then
+				local before = player:GetAttribute("Battery") or 0
+				if before > 0 then
+					local after = math.max(0, math.floor((before - 100 / difficulty.BatterySeconds * dt) * 10) / 10)
+					player:SetAttribute("Battery", after)
+					if before > Config.LowBattery and after <= Config.LowBattery then
+						Notify:FireClient(player, "Flashlight battery is low!", RED)
+					end
+					if after <= 0 then
+						player:SetAttribute("FlashlightOn", false)
+						Notify:FireClient(player, "Your flashlight died. Find a battery...", RED)
+					end
+				end
+			end
+		end
+
+		local timeLeft = math.ceil(endTime - os.clock())
+		state:SetAttribute("Countdown", math.max(timeLeft, 0))
+
+		-- Anyone past the exit line (once the door is open) has escaped
+		if exitOpen then
+			for _, player in participants do
+				if inRound[player] and player.Parent then
+					local character = player.Character
+					local root = character and character:FindFirstChild("HumanoidRootPart")
+					if root and root.Position.X > hotel.ExitX then
+						markOut(player)
+						escapedCount += 1
+						sendToLobby(player)
+						PlayerData.RecordEscape(player)
+
+						local lines = {}
+						local bestColor = Config.Rarities.Common.Color
+						for _ = 1, difficulty.RelicRolls do
+							local relic = Config.RollRelic(difficultyName)
+							if PlayerData.AwardRelic(player, relic.Id) then
+								table.insert(lines, relic.Name .. " (" .. relic.Rarity .. ")")
+								bestColor = Config.Rarities[relic.Rarity].Color
+							end
+						end
+						local relicText = ""
+						if #lines > 0 then
+							relicText = "Relics found: " .. table.concat(lines, ", ")
+						end
+						-- The cutscene plays on their screen; the toast follows once it has finished
+						Cutscene:FireClient(player, relicText, bestColor)
+						watchedCutscene[player] = true
+						task.delay(Config.CutsceneTime, function()
+							if player.Parent then
+								Notify:FireClient(player, "You escaped! " .. relicText, bestColor)
+							end
+						end)
+					end
+				end
+			end
+		end
+
+		local remaining = 0
+		for _, player in participants do
+			if inRound[player] and player.Parent then
+				remaining += 1
+			end
+		end
+
+		if remaining == 0 then
+			result = escapedCount > 0 and "escaped" or "wipe"
+			break
+		elseif timeLeft <= 0 then
+			result = "timeout"
+			break
+		end
+	end
+
+	-- End of the night
+	roundActive = false
+	task.wait(1)
+	if ghost then
+		ghost:Stop()
+	end
+	for _, connection in connections do
+		connection:Disconnect()
+	end
+	for _, player in participants do
+		leaveCupboard(player)
+		player:SetAttribute("Battery", nil)
+		player:SetAttribute("FlashlightOn", nil)
+		if inRound[player] then
+			markOut(player)
+			sendToLobby(player)
+		end
+	end
+	hotel.Folder:Destroy()
+
+	-- The team won: everyone who hasn't already seen the cutscene (caught players, anyone still inside) gets it now
+	if result == "escaped" then
+		for _, player in participants do
+			if player.Parent and not watchedCutscene[player] then
+				Cutscene:FireClient(player, "Your friends made it out.", GREY, "YOUR TEAM ESCAPED")
+			end
+		end
+	end
+
+	local message
+	if result == "escaped" then
+		message = string.format("%d of %d escaped the hotel!", escapedCount, #participants)
+	elseif result == "timeout" then
+		message = "Time's up. The hotel keeps whoever is left."
+	else
+		message = "Nobody escaped. The hotel keeps its guests."
+	end
+
+	setState({ Status = "Ending", Message = message, KeysFound = 0, KeysNeeded = 0 })
+	for secondsLeft = Config.EndScreenTime, 1, -1 do
+		state:SetAttribute("Countdown", secondsLeft)
+		task.wait(1)
+	end
+end
+
+-- If a night crashes for any reason, clean up and carry on instead of freezing the game.
+local function recoverFromError()
+	local leftover = workspace:FindFirstChild("Hotel")
+	if leftover then
+		leftover:Destroy()
+	end
+	local ghost = workspace:FindFirstChild("Ghost")
+	if ghost then
+		ghost:Destroy()
+	end
+	table.clear(inRound)
+	for _, player in Players:GetPlayers() do
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if root then
+			root.Anchored = false
+		end
+		hiding[player] = nil
+		player:SetAttribute("Battery", nil)
+		player:SetAttribute("FlashlightOn", nil)
+		player:SetAttribute("Hidden", false)
+		player:SetAttribute("InRound", false)
+		sendToLobby(player)
+	end
+end
+
+while true do
+	local difficultyName = intermission()
+	local ok, err = pcall(runRound, difficultyName)
+	if not ok then
+		warn("[TheLastGuest] The night crashed: " .. tostring(err))
+		recoverFromError()
+		task.wait(3)
+	end
+end
+]]></ProtectedString>
+</Properties>
+</Item>
+<Item class="ModuleScript" referent="RBX1">
+<Properties>
+<string name="Name">Ghost</string>
+<ProtectedString name="Source"><![CDATA[-- Ghost (ModuleScript in ServerScriptService)
+-- The monster. It wanders the hotel, chases anyone it sees or hears, searches where it last
+-- saw you, then goes back to wandering. Break line of sight and get away to lose it, or hide in a cupboard.
+--
+-- Its body (dress, hair, arms) is built by the GhostModel module, which the escape cutscene shares.
+-- This file decides where the ghost goes and what it does.
+
+local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local GhostModel = require(ReplicatedStorage:WaitForChild("GhostModel"))
+
+local Ghost = {}
+Ghost.__index = Ghost
+
+local HOVER = 3.5 -- height of the Root above the floor
+local POSE_INTERVAL = 0.05 -- seconds between animation updates
+
+
+local function turnToward(current, target, maxStep)
+	local difference = (target - current + math.pi) % (math.pi * 2) - math.pi
+	if math.abs(difference) <= maxStep then
+		return target
+	end
+	return current + math.sign(difference) * maxStep
+end
+
+-- hotel: the table returned by HotelBuilder.build()
+-- onCatch: function(player) called when the ghost catches a player
+function Ghost.new(hotel, difficultyName, onCatch)
+	local difficulty = Config.Difficulties[difficultyName]
+
+	local self = setmetatable({}, Ghost)
+	self.hotel = hotel
+	self.onCatch = onCatch
+	self.speed = difficulty.GhostSpeed
+	self.sightRange = difficulty.GhostSight
+	self.hearRange = difficulty.GhostHear
+	self.huntChance = difficulty.HuntChance
+	self.hideCheckChance = difficulty.HideCheckChance
+
+	self.mode = "patrol" -- "patrol", "chase" or "search"
+	self.waypoints = {}
+	self.index = 1
+	self.idleUntil = nil
+	self.computing = false
+	self.stopped = false
+	self.stunnedUntil = 0
+	self.noticeUntil = 0 -- brief freeze when it first spots someone
+	self.lastSeen = nil
+	self.lastSeenAt = 0
+	self.visitedAt = {} -- [patrol point index] = when it last went there
+
+	-- Movement and pose
+	self.speedNow = 0
+	self.yaw = 0
+	self.targetYaw = 0
+	self.frenzy = 1 -- grows the longer a chase lasts
+	self.lean = 0
+	self.reach = 0.1
+	self.headYaw = 0
+	self.headPitch = 0
+	self.poseClock = 0
+	self.presenceClock = 0
+	self.dimmedLights = {}
+
+	-- Line-of-sight checks only look at the hotel's walls and furniture
+	self.rayParams = RaycastParams.new()
+	self.rayParams.FilterType = Enum.RaycastFilterType.Include
+	self.rayParams.FilterDescendantsInstances = { hotel.Folder }
+
+	local model, root, limbs = GhostModel.build(hotel.GhostSpawn + Vector3.new(0, HOVER, 0))
+	self.model = model
+	self.root = root
+	self.limbs = limbs
+	self.model:SetAttribute("Mode", self.mode) -- the music reads this on the client
+	self.model.Parent = workspace
+	return self
+end
+
+function Ghost:Start()
+	local sinceThink = 0
+	self.connection = RunService.Heartbeat:Connect(function(dt)
+		if self.stopped then
+			return
+		end
+		sinceThink += dt
+		if sinceThink >= Config.GhostThinkInterval then
+			sinceThink = 0
+			self:_think()
+		end
+		self:_move(dt)
+		self:_animate(dt)
+		self:_checkCatch()
+	end)
+end
+
+function Ghost:Stop()
+	self.stopped = true
+	if self.connection then
+		self.connection:Disconnect()
+		self.connection = nil
+	end
+	for light in self.dimmedLights do
+		if light.Parent then
+			light.Brightness = light:GetAttribute("BaseBrightness")
+		end
+	end
+	self.model:Destroy()
+end
+
+-- Players who are still in the night, alive and not hidden
+function Ghost:_huntedPlayers()
+	local result = {}
+	for _, player in Players:GetPlayers() do
+		if player:GetAttribute("InRound") and not player:GetAttribute("Hidden") then
+			local character = player.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if root and humanoid and humanoid.Health > 0 then
+				table.insert(result, { Player = player, Root = root })
+			end
+		end
+	end
+	return result
+end
+
+-- Returns the position of the closest player the ghost can see or hear, or nil
+function Ghost:_scan()
+	local origin = self.model.Head.Position
+	local closestPosition = nil
+	local closestDistance = math.huge
+
+	for _, entry in self:_huntedPlayers() do
+		local target = entry.Root.Position
+		local distance = (target - origin).Magnitude
+		-- A dark player is harder to spot: the torch makes you easier to see
+		local player = entry.Player
+		local dark = player:GetAttribute("FlashlightOn") == false or (player:GetAttribute("Battery") or 100) <= 0
+		local sightRange = dark and self.sightRange * Config.DarkSightScale or self.sightRange
+
+		local noticed = false
+		if distance <= self.hearRange then
+			noticed = true
+		elseif distance <= sightRange then
+			-- Nothing in the way means a clear line of sight
+			noticed = workspace:Raycast(origin, target - origin, self.rayParams) == nil
+		end
+		if noticed and distance < closestDistance then
+			closestDistance = distance
+			closestPosition = target
+		end
+	end
+	return closestPosition
+end
+
+-- Called when a player climbs into a cupboard. If the ghost is chasing them right now, it saw them go in.
+function Ghost:OnPlayerHid(player, cupboard)
+	if self.mode == "chase" then
+		local offset = cupboard.Center - self.root.Position
+		if Vector3.new(offset.X, 0, offset.Z).Magnitude <= self.sightRange then
+			cupboard.Suspected = true
+			self.lastSeen = cupboard.Center
+			self.lastSeenAt = os.clock()
+		end
+	end
+end
+
+-- If the ghost is near a cupboard with someone inside, it may open it. It always opens the one
+-- it saw you climb into; any other has only a chance (HideCheckChance) each time it passes.
+function Ghost:_checkCupboards()
+	local position = self.root.Position
+	for _, cupboard in self.hotel.Cupboards do
+		local occupant = cupboard.Occupant
+		if occupant and os.clock() >= cupboard.NextCheck then
+			local offset = cupboard.Center - position
+			if Vector3.new(offset.X, 0, offset.Z).Magnitude <= Config.HideCheckRadius then
+				cupboard.NextCheck = os.clock() + Config.HideCheckCooldown
+				if cupboard.Suspected or math.random() < self.hideCheckChance then
+					cupboard.SetOpen(true)
+					self.stunnedUntil = os.clock() + Config.GhostStunTime
+					self.waypoints = {}
+					self.index = 1
+					self.onCatch(occupant)
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+function Ghost:_pathFinished()
+	return self.index > #self.waypoints
+end
+
+-- Chooses where to wander next. It prefers places it hasn't been for a while, so it covers the
+-- whole hotel instead of looping around the same few rooms.
+function Ghost:_pickPatrolPoint()
+	-- Sometimes it just goes to where a player is
+	if math.random() < self.huntChance then
+		local hunted = self:_huntedPlayers()
+		if #hunted > 0 then
+			return hunted[math.random(#hunted)].Root.Position
+		end
+	end
+
+	local points = self.hotel.PatrolPoints
+	local keys = {}
+	local order = {}
+	for i = 1, #points do
+		keys[i] = (self.visitedAt[i] or 0) + math.random() * 8 -- a little randomness so ties break differently each time
+		order[i] = i
+	end
+	table.sort(order, function(a, b)
+		return keys[a] < keys[b]
+	end)
+
+	local choice = order[math.random(math.min(4, #order))]
+	self.visitedAt[choice] = os.clock()
+	return points[choice]
+end
+
+function Ghost:_pathTo(destination)
+	self.computing = true
+	task.spawn(function()
+		local start = self.root.Position
+		local path = PathfindingService:CreatePath({
+			AgentRadius = 2.2,
+			AgentHeight = 6,
+			AgentCanJump = false,
+		})
+		local ok = pcall(function()
+			path:ComputeAsync(Vector3.new(start.X, 1, start.Z), Vector3.new(destination.X, 1, destination.Z))
+		end)
+		if ok and not self.stopped and path.Status == Enum.PathStatus.Success then
+			self.waypoints = path:GetWaypoints()
+			self.index = math.min(2, #self.waypoints) -- waypoint 1 is where we already are
+		end
+		self.computing = false
+	end)
+end
+
+-- It has just spotted someone: stop, turn to face them and reach out for a moment before the chase.
+function Ghost:_notice(position)
+	self.noticeUntil = os.clock() + Config.GhostNoticeTime
+	self.waypoints = {}
+	self.index = 1
+	self.frenzy = 1
+	local offset = position - self.root.Position
+	self.targetYaw = math.atan2(-offset.X, -offset.Z)
+end
+
+-- Decides what the ghost wants to do. Runs a few times per second.
+function Ghost:_think()
+	if self.computing or os.clock() < self.stunnedUntil then
+		return
+	end
+	if self:_checkCupboards() then
+		return
+	end
+
+	local seenAt = self:_scan()
+	local destination = nil
+
+	if seenAt then
+		if self.mode ~= "chase" then
+			self:_notice(seenAt)
+		end
+		self.mode = "chase"
+		self.lastSeen = seenAt
+		self.lastSeenAt = os.clock()
+		destination = seenAt
+	elseif self.mode == "chase" then
+		-- Lost sight of them: go and look where they were
+		self.mode = "search"
+		destination = self.lastSeen
+	elseif self.mode == "search" then
+		if self:_pathFinished() or os.clock() - self.lastSeenAt > Config.GhostSearchTime then
+			self.mode = "patrol"
+			self.idleUntil = nil
+			self.waypoints = {}
+			self.index = 1
+		end
+	elseif self.mode == "patrol" then
+		if self:_pathFinished() then
+			if not self.idleUntil then
+				-- Arrived somewhere: stand still and listen for a moment
+				self.idleUntil = os.clock() + 1.5 + math.random() * 2
+			elseif os.clock() >= self.idleUntil then
+				self.idleUntil = nil
+				destination = self:_pickPatrolPoint()
+			end
+		end
+	end
+
+	self.model:SetAttribute("Mode", self.mode)
+
+	if destination then
+		self:_pathTo(destination)
+	end
+end
+
+function Ghost:_move(dt)
+	local now = os.clock()
+	local frozen = now < self.stunnedUntil or now < self.noticeUntil
+	local waypoint = self.waypoints[self.index]
+
+	-- How fast it wants to go
+	local target = 0
+	if waypoint and not frozen then
+		target = self.speed
+		if self.mode == "patrol" then
+			target *= Config.GhostPatrolSpeedScale
+		elseif self.mode == "search" then
+			target *= Config.GhostSearchSpeedScale
+		else
+			target *= self.frenzy
+		end
+	end
+
+	-- Speed up gradually, slow down faster
+	local rate = (target > self.speedNow and Config.GhostAcceleration or Config.GhostAcceleration * 2) * dt
+	if math.abs(target - self.speedNow) <= rate then
+		self.speedNow = target
+	else
+		self.speedNow += math.sign(target - self.speedNow) * rate
+	end
+
+	-- Chasing makes it frantic: faster and faster the longer it stays on you
+	if self.mode == "chase" and not frozen then
+		self.frenzy = math.min(Config.GhostFrenzyMax, self.frenzy + Config.GhostFrenzyRate * dt)
+	elseif self.mode ~= "chase" then
+		self.frenzy = 1
+	end
+
+	local position = self.root.Position
+	local flat = Vector3.new(position.X, 0, position.Z)
+
+	if waypoint and self.speedNow > 0.01 then
+		local goal = Vector3.new(waypoint.Position.X, 0, waypoint.Position.Z)
+		local offset = goal - flat
+		local step = self.speedNow * dt
+		if offset.Magnitude <= step then
+			flat = goal
+			self.index += 1
+		else
+			flat += offset.Unit * step
+			self.targetYaw = math.atan2(-offset.X, -offset.Z) -- -Z is "forward"
+		end
+	end
+
+	-- Turn smoothly instead of snapping round
+	local turnRate = (self.mode == "chase") and 7 or 2.2
+	self.yaw = turnToward(self.yaw, self.targetYaw, turnRate * dt)
+
+	local bob = 0.18 * math.sin(now * 2.3)
+	self.root.CFrame = CFrame.new(flat.X, HOVER + bob, flat.Z) * CFrame.Angles(0, self.yaw, 0)
+end
+
+-- Body language, and the lights that go dim when it is near
+function Ghost:_animate(dt)
+	local now = os.clock()
+	local chasing = self.mode == "chase"
+	local noticing = now < self.noticeUntil
+
+	local targetLean, targetReach
+	if noticing then
+		targetLean, targetReach = -0.05, 1.0 -- rears up and reaches
+	elseif chasing then
+		targetLean, targetReach = -0.32, 0.85
+	elseif self.mode == "search" then
+		targetLean, targetReach = -0.14, 0.35
+	else
+		targetLean, targetReach = -0.04, 0.12
+	end
+	local blend = math.min(1, dt * 4)
+	self.lean += (targetLean - self.lean) * blend
+	self.reach += (targetReach - self.reach) * blend
+
+	-- Head: slowly scans left and right when standing still, locks on when hunting
+	local targetHeadYaw, targetHeadPitch = 0, 0
+	if not chasing and not noticing and self.speedNow < 0.5 then
+		targetHeadYaw = math.sin(now * 0.6) * 0.9
+		targetHeadPitch = 0.1
+	elseif noticing then
+		targetHeadPitch = -0.2
+	end
+	self.headYaw += (targetHeadYaw - self.headYaw) * blend
+	self.headPitch += (targetHeadPitch - self.headPitch) * blend
+
+	self.poseClock += dt
+	if self.poseClock >= POSE_INTERVAL then
+		self.poseClock = 0
+		self:_pose(now)
+	end
+
+	self.presenceClock += dt
+	if self.presenceClock >= 0.1 then
+		self.presenceClock = 0
+		self:_flickerNearbyLights()
+	end
+end
+
+function Ghost:_pose(now)
+	GhostModel.pose(self.limbs, {
+		Lean = self.lean,
+		Reach = self.reach,
+		HeadYaw = self.headYaw,
+		HeadPitch = self.headPitch,
+		Speed = self.speedNow,
+		Wave = 0,
+	}, now)
+end
+
+-- Lamps near the ghost stutter and dim: a warning you can see before you see it
+function Ghost:_flickerNearbyLights()
+	local position = self.root.Position
+	for _, light in self.hotel.Lights do
+		local lamp = light.Parent
+		if lamp then
+			local distance = (lamp.Position - position).Magnitude
+			local base = light:GetAttribute("BaseBrightness")
+			if distance < Config.GhostPresenceRadius then
+				local closeness = 1 - distance / Config.GhostPresenceRadius
+				if math.random() < 0.4 * closeness then
+					light.Brightness = base * math.random() * 0.25
+				else
+					light.Brightness = base * (1 - 0.5 * closeness)
+				end
+				self.dimmedLights[light] = true
+			elseif self.dimmedLights[light] then
+				light.Brightness = base
+				self.dimmedLights[light] = nil
+			end
+		end
+	end
+end
+
+function Ghost:_checkCatch()
+	if os.clock() < self.stunnedUntil then
+		return
+	end
+	local position = self.root.Position
+	for _, entry in self:_huntedPlayers() do
+		local offset = entry.Root.Position - position
+		if Vector3.new(offset.X, 0, offset.Z).Magnitude <= Config.GhostCatchRange then
+			self.stunnedUntil = os.clock() + Config.GhostStunTime
+			self.waypoints = {}
+			self.index = 1
+			self.onCatch(entry.Player)
+			return
+		end
+	end
+end
+
+return Ghost
+]]></ProtectedString>
+</Properties>
+</Item>
+<Item class="ModuleScript" referent="RBX2">
+<Properties>
+<string name="Name">HotelBuilder</string>
+<ProtectedString name="Source"><![CDATA[-- HotelBuilder (ModuleScript in ServerScriptService)
+-- Builds one floor of the haunted hotel out of parts, so you don't have to model anything.
+-- A long corridor runs west -> east. Rooms sit on both sides. The locked exit is at the east end.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+
+local HotelBuilder = {}
+
+local WALL_COLOR = Color3.fromRGB(78, 52, 52)
+local FLOOR_COLOR = Color3.fromRGB(58, 40, 30)
+local CARPET_COLOR = Color3.fromRGB(95, 22, 28)
+local CEILING_COLOR = Color3.fromRGB(40, 32, 30)
+local WOOD_COLOR = Color3.fromRGB(88, 58, 36)
+
+local function newPart(parent, name, size, cframe, color, material)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.Size = size
+	part.CFrame = cframe
+	part.Color = color
+	part.Material = material
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	part.Parent = parent
+	return part
+end
+
+local function addLamp(parent, position, brightness, range, lights)
+	local lamp = newPart(parent, "Lamp", Vector3.new(2, 0.3, 2), CFrame.new(position), Color3.fromRGB(255, 226, 170), Enum.Material.Neon)
+	lamp.CanCollide = false
+
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 205, 140)
+	light.Brightness = brightness
+	light.Range = range
+	light.Shadows = true
+	light:SetAttribute("BaseBrightness", brightness)
+	light.Parent = lamp
+	table.insert(lights, light)
+end
+
+local function addLabel(part, face, text, textColor)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = face
+	gui.PixelsPerStud = 40
+	gui.Parent = part
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = textColor
+	label.TextScaled = true
+	label.Font = Enum.Font.SpecialElite
+	label.Parent = gui
+end
+
+local CUPBOARD_COLOR = Color3.fromRGB(70, 44, 30)
+local DOOR_COLOR = Color3.fromRGB(84, 54, 36)
+
+-- A walk-in cupboard against a room's back wall, facing the corridor. Players hide inside it.
+-- Its two doors close behind the player, with a narrow slit at eye height to peek through.
+-- side: 1 = north rooms, -1 = south rooms. backZ: distance of the back wall from the corridor centre.
+local function buildCupboard(parent, cx, side, backZ)
+	local function panel(name, size, x, y, depth)
+		return newPart(parent, name, size, CFrame.new(x, y, side * (backZ - depth)), CUPBOARD_COLOR, Enum.Material.Wood)
+	end
+	panel("CupboardBack", Vector3.new(6, 9, 0.3), cx, 4.5, 0.15)
+	panel("CupboardSide", Vector3.new(0.3, 9, 3), cx - 2.85, 4.5, 1.5)
+	panel("CupboardSide", Vector3.new(0.3, 9, 3), cx + 2.85, 4.5, 1.5)
+	panel("CupboardTop", Vector3.new(6, 0.3, 3), cx, 8.85, 1.5)
+	panel("CupboardBottom", Vector3.new(6, 0.3, 3), cx, 0.15, 1.5)
+
+	-- Two doors hinged on their outer edges. Each door is two pieces with a gap (the peek slit) between them.
+	local doorZ = side * (backZ - 3.13)
+	local hingeY = 4.5
+	local pieces = {}
+	local doorSpecs = {
+		{ hingeX = cx - 2.95, offset = 1.475, dir = side },
+		{ hingeX = cx + 2.95, offset = -1.475, dir = -side },
+	}
+	local pieceSpecs = {
+		{ centerY = 2.4, height = 4.4 }, -- below the slit (the slit runs from y 4.6 to 5.5, about eye height)
+		{ centerY = 7.05, height = 3.1 }, -- above the slit
+	}
+	for _, door in doorSpecs do
+		for _, piece in pieceSpecs do
+			local part = newPart(
+				parent,
+				"CupboardDoor",
+				Vector3.new(2.95, piece.height, 0.25),
+				CFrame.new(door.hingeX + door.offset, piece.centerY, doorZ),
+				DOOR_COLOR,
+				Enum.Material.Wood
+			)
+			-- Put the part's pivot on the hinge, so PivotTo swings it like a real door
+			part.PivotOffset = CFrame.new(-door.offset, hingeY - piece.centerY, 0)
+			table.insert(pieces, { Part = part, Hinge = Vector3.new(door.hingeX, hingeY, doorZ), Dir = door.dir })
+		end
+	end
+
+	-- Invisible spot in front of the doors that the "Hide" prompt attaches to
+	local openPoint = newPart(parent, "OpenPoint", Vector3.new(2, 2, 0.5), CFrame.new(cx, 4.5, side * (backZ - 3.6)), CUPBOARD_COLOR, Enum.Material.Wood)
+	openPoint.Transparency = 1
+	openPoint.CanCollide = false
+	openPoint.CanQuery = false
+
+	local insideZ = side * (backZ - 1.7)
+	local cupboard = {
+		OpenPoint = openPoint,
+		Center = Vector3.new(cx, 0, insideZ), -- floor position inside, used for distance checks
+		HidePosition = CFrame.lookAt(Vector3.new(cx, 3.3, insideZ), Vector3.new(cx, 3.3, insideZ - side * 5)), -- where a hiding player stands, facing out
+		Occupant = nil, -- the player hiding inside, if any
+		Suspected = false, -- true if the ghost saw someone climb in
+		NextCheck = 0, -- the ghost won't check this cupboard again before this time
+		IsOpen = false,
+	}
+
+	local openAmount = 0 -- 0 = shut, 1 = wide open
+	local token = 0
+
+	local function apply(amount)
+		for _, piece in pieces do
+			piece.Part:PivotTo(CFrame.new(piece.Hinge) * CFrame.Angles(0, piece.Dir * math.rad(105) * amount, 0))
+		end
+	end
+
+	function cupboard.SetOpen(open)
+		if cupboard.IsOpen == open then
+			return
+		end
+		cupboard.IsOpen = open
+		token += 1
+		local myToken = token
+		task.spawn(function()
+			local from = openAmount
+			local to = open and 1 or 0
+			local steps = 14
+			for step = 1, steps do
+				if myToken ~= token then
+					return -- a newer open/close took over
+				end
+				openAmount = from + (to - from) * step / steps
+				apply(openAmount)
+				task.wait(0.02)
+			end
+		end)
+	end
+
+	return cupboard
+end
+
+-- A small old brass key lying flat: ring, collar, shaft and teeth. Place it with key:PivotTo(...).
+-- The shaft is the PrimaryPart, so attach prompts to key.PrimaryPart.
+function HotelBuilder.newKey()
+	local model = Instance.new("Model")
+	model.Name = "Key"
+
+	local function piece(name, size, cframe)
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanTouch = false
+		part.Size = size
+		part.CFrame = cframe
+		part.Material = Enum.Material.Metal
+		part.Color = Color3.fromRGB(176, 141, 66)
+		part.Reflectance = 0.12
+		part.TopSurface = Enum.SurfaceType.Smooth
+		part.BottomSurface = Enum.SurfaceType.Smooth
+		part.Parent = model
+		return part
+	end
+
+	local shaft = piece("Shaft", Vector3.new(0.13, 0.13, 1.45), CFrame.new(0, 0, 0.3))
+	model.PrimaryPart = shaft
+
+	-- The round bow (finger loop), made of ten short pieces around a circle
+	local segments, radius = 10, 0.32
+	for i = 1, segments do
+		local angle = (i / segments) * math.pi * 2
+		local position = Vector3.new(math.cos(angle) * radius, 0, -0.75 + math.sin(angle) * radius)
+		local tangent = Vector3.new(-math.sin(angle), 0, math.cos(angle))
+		piece("Bow", Vector3.new(0.16, 0.13, 0.24), CFrame.lookAt(position, position + tangent))
+	end
+
+	piece("Collar", Vector3.new(0.3, 0.17, 0.12), CFrame.new(0, 0, -0.2))
+	piece("BitA", Vector3.new(0.34, 0.11, 0.2), CFrame.new(0.22, 0, 0.88))
+	piece("BitB", Vector3.new(0.24, 0.11, 0.16), CFrame.new(0.17, 0, 0.58))
+
+	-- A faint warm glint so it can be spotted in the dark
+	local glint = Instance.new("PointLight")
+	glint.Color = Color3.fromRGB(255, 220, 140)
+	glint.Brightness = 0.6
+	glint.Range = 6
+	glint.Parent = shaft
+
+	return model
+end
+
+-- A D-cell battery lying on its side: black body, copper top and a silver nub.
+-- Place it with battery:PivotTo(...). Attach prompts to battery.PrimaryPart.
+function HotelBuilder.newBattery()
+	local model = Instance.new("Model")
+	model.Name = "Battery"
+
+	local function piece(name, size, cframe, color, material)
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Shape = Enum.PartType.Cylinder -- a cylinder's long axis is X, so it lies flat by default
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanTouch = false
+		part.Size = size
+		part.CFrame = cframe
+		part.Color = color
+		part.Material = material
+		part.Parent = model
+		return part
+	end
+
+	local body = piece("Body", Vector3.new(0.7, 0.5, 0.5), CFrame.new(-0.2, 0, 0), Color3.fromRGB(28, 28, 30), Enum.Material.SmoothPlastic)
+	model.PrimaryPart = body
+	piece("Top", Vector3.new(0.4, 0.5, 0.5), CFrame.new(0.35, 0, 0), Color3.fromRGB(196, 118, 52), Enum.Material.Metal)
+	piece("Nub", Vector3.new(0.12, 0.2, 0.2), CFrame.new(0.61, 0, 0), Color3.fromRGB(205, 205, 210), Enum.Material.Metal)
+	piece("Band", Vector3.new(0.08, 0.52, 0.52), CFrame.new(0.1, 0, 0), Color3.fromRGB(235, 200, 60), Enum.Material.SmoothPlastic)
+
+	-- A faint glint so it can be spotted in the dark
+	local glint = Instance.new("PointLight")
+	glint.Color = Color3.fromRGB(200, 255, 170)
+	glint.Brightness = 0.5
+	glint.Range = 5
+	glint.Parent = body
+
+	return model
+end
+
+-- Builds the hotel and returns a table of useful information (see the bottom of this function).
+-- The caller is responsible for parenting hotel.Folder to workspace.
+function HotelBuilder.build()
+	local roomsPerSide = Config.RoomsPerSide
+	local rw, rd, cw, h = Config.RoomWidth, Config.RoomDepth, Config.CorridorWidth, Config.WallHeight
+	local doorW, doorH = Config.DoorWidth, Config.DoorHeight
+	local exitLen = Config.ExitHallLength
+
+	local half = cw / 2
+	local length = roomsPerSide * rw
+	local totalDepth = 2 * (half + rd)
+	local shellWidth = length + exitLen + 2
+	local shellCenterX = (length + exitLen) / 2
+
+	local folder = Instance.new("Folder")
+	folder.Name = "Hotel"
+
+	local lights = {}
+	local cupboards = {}
+	local keySpots = {} -- one entry per room: the places in that room a key can lie
+	local patrolPoints = {}
+
+	-- Floor, carpet and ceiling (floor top surface is at y = 0)
+	newPart(folder, "Floor", Vector3.new(shellWidth, 1, totalDepth + 2), CFrame.new(shellCenterX, -0.5, 0), FLOOR_COLOR, Enum.Material.WoodPlanks)
+	newPart(folder, "Carpet", Vector3.new(length, 0.1, cw - 4), CFrame.new(length / 2, 0.05, 0), CARPET_COLOR, Enum.Material.Fabric)
+	newPart(folder, "Ceiling", Vector3.new(shellWidth, 1, totalDepth + 2), CFrame.new(shellCenterX, h + 0.5, 0), CEILING_COLOR, Enum.Material.Concrete)
+
+	-- West end of the corridor
+	newPart(folder, "WestWall", Vector3.new(1, h, totalDepth + 2), CFrame.new(-0.5, h / 2, 0), WALL_COLOR, Enum.Material.Fabric)
+
+	-- Rooms on both sides of the corridor (side 1 = north, side -1 = south)
+	for _, side in { 1, -1 } do
+		newPart(
+			folder,
+			"BackWall",
+			Vector3.new(length + 1.5, h, 1),
+			CFrame.new((length - 0.5) / 2, h / 2, side * (half + rd + 0.5)),
+			WALL_COLOR,
+			Enum.Material.Fabric
+		)
+
+		for i = 1, roomsPerSide do
+			local xMin = (i - 1) * rw
+			local xMax = i * rw
+			local cx = xMin + rw / 2
+			local zFront = side * half
+			local zCenter = side * (half + rd / 2)
+			local sideWidth = (rw - doorW) / 2
+
+			-- Wall between this room and the next one
+			newPart(folder, "Partition", Vector3.new(1, h, rd), CFrame.new(xMax, h / 2, zCenter), WALL_COLOR, Enum.Material.Fabric)
+
+			-- Wall facing the corridor, with a doorway in the middle
+			newPart(folder, "FrontWall", Vector3.new(sideWidth, h, 1), CFrame.new(xMin + sideWidth / 2, h / 2, zFront), WALL_COLOR, Enum.Material.Fabric)
+			newPart(folder, "FrontWall", Vector3.new(sideWidth, h, 1), CFrame.new(xMax - sideWidth / 2, h / 2, zFront), WALL_COLOR, Enum.Material.Fabric)
+			local lintel = newPart(
+				folder,
+				"Lintel",
+				Vector3.new(doorW, h - doorH, 1),
+				CFrame.new(cx, doorH + (h - doorH) / 2, zFront),
+				WALL_COLOR,
+				Enum.Material.Fabric
+			)
+			-- The room number sign faces the corridor (Front = -Z, Back = +Z)
+			local roomNumber = (side == 1 and 100 or 200) + i
+			addLabel(lintel, side == 1 and Enum.NormalId.Front or Enum.NormalId.Back, tostring(roomNumber), Color3.fromRGB(220, 190, 110))
+
+			-- Furniture: a table and a bed or couch on opposite sides of the room
+			local tableOnLeft = math.random() < 0.5
+			local tableX = tableOnLeft and (xMin + 3.5) or (xMax - 3.5)
+			local otherX = tableOnLeft and (xMax - 3.5) or (xMin + 3.5)
+
+			local tableDepth = rd * 0.45 + math.random() * (rd * 0.4)
+			local tableProp = newPart(
+				folder,
+				"Table",
+				Vector3.new(4, 3, 4),
+				CFrame.new(tableX, 1.5, side * (half + 0.5 + tableDepth)),
+				WOOD_COLOR,
+				Enum.Material.Wood
+			)
+
+			local otherDepth = 10 + math.random() * 6
+			local size = Vector3.new(4, 2.5, 7) -- bed
+			local name = "Bed"
+			if math.random() < 0.5 then
+				size = Vector3.new(3, 3, 6)
+				name = "Couch"
+			end
+			local otherProp = newPart(folder, name, size, CFrame.new(otherX, size.Y / 2, side * (half + 0.5 + otherDepth)), WOOD_COLOR, Enum.Material.Wood)
+
+			-- A key can lie on top of the table or on top of the bed/couch
+			table.insert(keySpots, {
+				tableProp.Position + Vector3.new((math.random() - 0.5) * 1.4, 1.5 + 0.08, (math.random() - 0.5) * 1.4),
+				otherProp.Position
+					+ Vector3.new((math.random() - 0.5) * (size.X - 1.5), size.Y / 2 + 0.08, (math.random() - 0.5) * (size.Z - 3)),
+			})
+
+			-- A cupboard against the back wall that players can hide in
+			table.insert(cupboards, buildCupboard(folder, cx, side, half + rd))
+			table.insert(patrolPoints, Vector3.new(cx, 0, side * (half + rd - 6))) -- the ghost likes to check these
+
+			-- A dim lamp in the middle of the room
+			addLamp(folder, Vector3.new(cx, h - 0.15, zCenter), 0.8, 18, lights)
+
+			table.insert(patrolPoints, Vector3.new(cx, 0, zCenter))
+		end
+	end
+
+	-- Corridor lamps and patrol points
+	for i = 1, roomsPerSide do
+		local cx = (i - 1) * rw + rw / 2
+		addLamp(folder, Vector3.new(cx, h - 0.15, 0), 1, 24, lights)
+		table.insert(patrolPoints, Vector3.new(cx, 0, 0))
+	end
+
+	-- Exit hall at the east end, behind a locked door
+	newPart(folder, "ExitWallNorth", Vector3.new(exitLen, h, 1), CFrame.new(length + exitLen / 2, h / 2, half), WALL_COLOR, Enum.Material.Fabric)
+	newPart(folder, "ExitWallSouth", Vector3.new(exitLen, h, 1), CFrame.new(length + exitLen / 2, h / 2, -half), WALL_COLOR, Enum.Material.Fabric)
+	newPart(folder, "ExitEndWall", Vector3.new(1, h, cw + 1), CFrame.new(length + exitLen + 0.5, h / 2, 0), WALL_COLOR, Enum.Material.Fabric)
+
+	local exitDoor = newPart(folder, "ExitDoor", Vector3.new(1.5, h, cw), CFrame.new(length, h / 2, 0), Color3.fromRGB(110, 30, 30), Enum.Material.Metal)
+
+	local exitSign = newPart(
+		folder,
+		"ExitSign",
+		Vector3.new(8, 2.5, 0.3),
+		CFrame.new(length + exitLen - 0.2, 9, 0),
+		Color3.fromRGB(15, 60, 25),
+		Enum.Material.Neon
+	)
+	exitSign.CanCollide = false
+	addLabel(exitSign, Enum.NormalId.Left, "EXIT", Color3.fromRGB(160, 255, 180)) -- Left = -X, toward the players
+
+	local hallLight = Instance.new("PointLight")
+	hallLight.Color = Color3.fromRGB(110, 255, 140)
+	hallLight.Brightness = 2
+	hallLight.Range = 22
+	hallLight.Enabled = false
+	hallLight.Parent = exitSign
+
+	local function openExit()
+		exitDoor.CanCollide = false
+		exitDoor.Transparency = 0.75
+		exitDoor.Color = Color3.fromRGB(60, 200, 90)
+		hallLight.Enabled = true
+	end
+
+	-- Where players start: the west end of the corridor, facing east (room for 8)
+	local playerSpawns = {}
+	for i = 1, 8 do
+		local column = (i - 1) // 4
+		local row = (i - 1) % 4
+		table.insert(playerSpawns, Vector3.new(3 + column * 3, 3.5, -4.5 + row * 3))
+	end
+
+	-- The ghost starts in the room furthest from the players
+	local ghostSpawn = Vector3.new(length - rw / 2, 0, half + rd / 2)
+
+	-- Make the lights flicker now and then
+	task.spawn(function()
+		while folder.Parent do
+			task.wait(0.2)
+			local light = lights[math.random(#lights)]
+			if math.random() < 0.3 and light.Parent then
+				local base = light:GetAttribute("BaseBrightness")
+				light.Brightness = 0
+				task.wait(0.07)
+				if light.Parent then
+					light.Brightness = base
+				end
+			end
+		end
+	end)
+
+	return {
+		Folder = folder,
+		Cupboards = cupboards, -- one per room; players can hide inside
+		Lights = lights, -- every lamp light; the ghost dims the ones near it
+		KeySpots = keySpots, -- list of rooms, each a list of positions a key can lie
+		PatrolPoints = patrolPoints, -- floor positions the ghost wanders between
+		PlayerSpawns = playerSpawns,
+		GhostSpawn = ghostSpawn,
+		ExitX = length + 2, -- walk past this X (once the door is open) to escape
+		OpenExit = openExit,
+	}
+end
+
+return HotelBuilder
+]]></ProtectedString>
+</Properties>
+</Item>
+<Item class="ModuleScript" referent="RBX3">
+<Properties>
+<string name="Name">PlayerData</string>
+<ProtectedString name="Source"><![CDATA[-- PlayerData (ModuleScript in ServerScriptService)
+-- Remembers each player's relic collection and escape count between visits.
+-- Relics are copied onto the player as attributes named "Relic_<Id>" so the HUD can show them.
+
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+
+local PlayerData = {}
+
+-- GetDataStore errors in an unpublished place. Saving is optional, so never let that stop the game.
+local storeOk, store = pcall(function()
+	return DataStoreService:GetDataStore(Config.DataStoreName)
+end)
+if not storeOk then
+	warn("[TheLastGuest] Saving is off until you publish the game (File > Publish to Roblox). The game still works.")
+	store = nil
+end
+local sessions = {} -- [Player] = { Relics = { [id] = count }, Escapes = number }
+local canSave = {} -- [Player] = true only if their data loaded, so a failed load can never wipe a save
+
+local function keyFor(player)
+	return "Player_" .. player.UserId
+end
+
+local function loadFromStore(player)
+	if not store then
+		return {}
+	end
+
+	local success, data
+	for attempt = 1, 3 do
+		success, data = pcall(function()
+			return store:GetAsync(keyFor(player))
+		end)
+		if success then
+			break
+		end
+		task.wait(attempt)
+	end
+
+	if success then
+		canSave[player] = true
+		return data or {}
+	end
+
+	warn("[TheLastGuest] Could not load data for " .. player.Name .. ". Progress won't be saved this visit. (" .. tostring(data) .. ")")
+	return {}
+end
+
+local function publishAttributes(player)
+	local session = sessions[player]
+	if not session then
+		return
+	end
+	for _, relic in Config.Relics do
+		player:SetAttribute("Relic_" .. relic.Id, session.Relics[relic.Id] or 0)
+	end
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if leaderstats then
+		leaderstats.Escapes.Value = session.Escapes
+	end
+end
+
+local function onPlayerAdded(player)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	local escapes = Instance.new("IntValue")
+	escapes.Name = "Escapes"
+	escapes.Parent = leaderstats
+	leaderstats.Parent = player
+
+	local data = loadFromStore(player)
+	if player.Parent == nil then
+		return -- they left while we were loading
+	end
+
+	local session = { Relics = {}, Escapes = 0 }
+	if type(data.Escapes) == "number" then
+		session.Escapes = data.Escapes
+	end
+	if type(data.Relics) == "table" then
+		for id, count in data.Relics do
+			if Config.GetRelic(id) and type(count) == "number" then
+				session.Relics[id] = count
+			end
+		end
+	end
+	sessions[player] = session
+	publishAttributes(player)
+end
+
+local function save(player)
+	local session = sessions[player]
+	if not store or not session or not canSave[player] then
+		return
+	end
+	local ok, err = pcall(function()
+		store:SetAsync(keyFor(player), { Relics = session.Relics, Escapes = session.Escapes })
+	end)
+	if not ok then
+		warn("[TheLastGuest] Could not save data for " .. player.Name .. ": " .. tostring(err))
+	end
+end
+
+-- Adds one copy of a relic. Returns false if the player's data hasn't loaded yet.
+function PlayerData.AwardRelic(player, relicId)
+	local session = sessions[player]
+	if not session or not Config.GetRelic(relicId) then
+		return false
+	end
+	session.Relics[relicId] = (session.Relics[relicId] or 0) + 1
+	publishAttributes(player)
+	return true
+end
+
+function PlayerData.RecordEscape(player)
+	local session = sessions[player]
+	if session then
+		session.Escapes += 1
+		publishAttributes(player)
+	end
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, player in Players:GetPlayers() do
+	task.spawn(onPlayerAdded, player)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	save(player)
+	sessions[player] = nil
+	canSave[player] = nil
+end)
+
+game:BindToClose(function()
+	for _, player in Players:GetPlayers() do
+		task.spawn(save, player)
+	end
+	task.wait(2)
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(Config.AutosaveInterval)
+		for _, player in Players:GetPlayers() do
+			save(player)
+		end
+	end
+end)
+
+return PlayerData
+]]></ProtectedString>
+</Properties>
+</Item>
+</roblox>
