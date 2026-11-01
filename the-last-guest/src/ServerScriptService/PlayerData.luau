@@ -10,7 +10,14 @@ local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
 
 local PlayerData = {}
 
-local store = DataStoreService:GetDataStore(Config.DataStoreName)
+-- GetDataStore errors in an unpublished place. Saving is optional, so never let that stop the game.
+local storeOk, store = pcall(function()
+	return DataStoreService:GetDataStore(Config.DataStoreName)
+end)
+if not storeOk then
+	warn("[TheLastGuest] Saving is off until you publish the game (File > Publish to Roblox). The game still works.")
+	store = nil
+end
 local sessions = {} -- [Player] = { Relics = { [id] = count }, Escapes = number }
 local canSave = {} -- [Player] = true only if their data loaded, so a failed load can never wipe a save
 
@@ -19,6 +26,10 @@ local function keyFor(player)
 end
 
 local function loadFromStore(player)
+	if not store then
+		return {}
+	end
+
 	local success, data
 	for attempt = 1, 3 do
 		success, data = pcall(function()
@@ -83,7 +94,7 @@ end
 
 local function save(player)
 	local session = sessions[player]
-	if not session or not canSave[player] then
+	if not store or not session or not canSave[player] then
 		return
 	end
 	local ok, err = pcall(function()
