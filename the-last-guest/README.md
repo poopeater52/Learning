@@ -49,7 +49,7 @@ New scripts come with a line like `print("Hello world!")`. **Delete everything i
    - Only one person fits in each cupboard.
 5c. **Battery:** your flashlight drains while it's on (watch the bar above the Flashlight button). Hunt for **batteries** on tables and beds (hold **E**); each restores half a battery. At 20% the beam flickers, at 0 it dies. Turning it off saves power, and the ghost can only see you from about 60% as far away when you're in the dark, but you won't see it coming either.
 6. Press **R** to see your relic collection.
-7. **Escape** and a short cutscene plays: you drive off in a fast car, and through the rear window the ghost waves goodbye from its window. Then **YOU ESCAPED** appears.
+7. **Win a round** (anyone escapes, on any difficulty) and a short cutscene plays. If you escaped, it plays straight away and says YOU ESCAPED. If you were caught but a teammate made it out, it plays when the night ends and says YOUR TEAM ESCAPED. It shows: you drive off in a fast car, and through the rear window the ghost waves goodbye from its window. Then **YOU ESCAPED** appears.
 
 Stop the test with the red **Stop** button.
 

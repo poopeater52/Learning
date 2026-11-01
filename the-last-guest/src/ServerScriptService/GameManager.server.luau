@@ -24,7 +24,7 @@ end
 
 local JumpScare = makeRemote("JumpScare")
 local Notify = makeRemote("Notify") -- Notify:FireClient(player, text, color)
-local Cutscene = makeRemote("Cutscene") -- Cutscene:FireClient(player, relicText, color): the "You Escaped" cutscene
+local Cutscene = makeRemote("Cutscene") -- Cutscene:FireClient(player, subtitle, color, title): the escape cutscene
 local FlashlightToggle = makeRemote("FlashlightToggle") -- the client asks to turn its torch on or off
 
 -- The HUD reads everything about the current night from attributes on this folder.
@@ -355,6 +355,7 @@ local function runRound(difficultyName)
 	local keysFound = 0
 	local exitOpen = false
 	local escapedCount = 0
+	local watchedCutscene = {} -- players who have already been shown the cutscene this night
 
 	local hotel = HotelBuilder.build()
 	hotel.Folder.Parent = workspace
@@ -602,6 +603,7 @@ local function runRound(difficultyName)
 						end
 						-- The cutscene plays on their screen; the toast follows once it has finished
 						Cutscene:FireClient(player, relicText, bestColor)
+						watchedCutscene[player] = true
 						task.delay(Config.CutsceneTime, function()
 							if player.Parent then
 								Notify:FireClient(player, "You escaped! " .. relicText, bestColor)
@@ -647,6 +649,15 @@ local function runRound(difficultyName)
 		end
 	end
 	hotel.Folder:Destroy()
+
+	-- The team won: everyone who hasn't already seen the cutscene (caught players, anyone still inside) gets it now
+	if result == "escaped" then
+		for _, player in participants do
+			if player.Parent and not watchedCutscene[player] then
+				Cutscene:FireClient(player, "Your friends made it out.", GREY, "YOUR TEAM ESCAPED")
+			end
+		end
+	end
 
 	local message
 	if result == "escaped" then

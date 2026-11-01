@@ -216,7 +216,7 @@ local function frame(parent, props)
 	return f
 end
 
-local function buildScreen(relicText, relicColor)
+local function buildScreen(relicText, relicColor, titleText)
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "EscapeCutscene"
 	gui.ResetOnSpawn = false
@@ -250,7 +250,7 @@ local function buildScreen(relicText, relicColor)
 	title.Position = UDim2.fromScale(0.5, 0.42)
 	title.Size = UDim2.fromScale(0.8, 0.22)
 	title.BackgroundTransparency = 1
-	title.Text = "YOU ESCAPED"
+	title.Text = titleText or "YOU ESCAPED"
 	title.Font = Enum.Font.Creepster
 	title.TextScaled = true
 	title.TextColor3 = Color3.fromRGB(240, 240, 245)
@@ -312,7 +312,7 @@ end
 
 local playing = false
 
-local function play(relicText, relicColor)
+local function play(relicText, relicColor, titleText)
 	if playing then
 		return
 	end
@@ -365,7 +365,7 @@ local function play(relicText, relicColor)
 		Lighting.FogStart = 200
 		Lighting.FogEnd = 1400
 
-		screen = buildScreen(relicText or "", relicColor)
+		screen = buildScreen(relicText or "", relicColor, titleText)
 		stage = Instance.new("Folder")
 		stage.Name = "EscapeCutsceneStage"
 		stage.Parent = workspace
