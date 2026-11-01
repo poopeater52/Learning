@@ -202,6 +202,43 @@ function HotelBuilder.newKey()
 	return model
 end
 
+-- A D-cell battery lying on its side: black body, copper top and a silver nub.
+-- Place it with battery:PivotTo(...). Attach prompts to battery.PrimaryPart.
+function HotelBuilder.newBattery()
+	local model = Instance.new("Model")
+	model.Name = "Battery"
+
+	local function piece(name, size, cframe, color, material)
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Shape = Enum.PartType.Cylinder -- a cylinder's long axis is X, so it lies flat by default
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanTouch = false
+		part.Size = size
+		part.CFrame = cframe
+		part.Color = color
+		part.Material = material
+		part.Parent = model
+		return part
+	end
+
+	local body = piece("Body", Vector3.new(0.7, 0.5, 0.5), CFrame.new(-0.2, 0, 0), Color3.fromRGB(28, 28, 30), Enum.Material.SmoothPlastic)
+	model.PrimaryPart = body
+	piece("Top", Vector3.new(0.4, 0.5, 0.5), CFrame.new(0.35, 0, 0), Color3.fromRGB(196, 118, 52), Enum.Material.Metal)
+	piece("Nub", Vector3.new(0.12, 0.2, 0.2), CFrame.new(0.61, 0, 0), Color3.fromRGB(205, 205, 210), Enum.Material.Metal)
+	piece("Band", Vector3.new(0.08, 0.52, 0.52), CFrame.new(0.1, 0, 0), Color3.fromRGB(235, 200, 60), Enum.Material.SmoothPlastic)
+
+	-- A faint glint so it can be spotted in the dark
+	local glint = Instance.new("PointLight")
+	glint.Color = Color3.fromRGB(200, 255, 170)
+	glint.Brightness = 0.5
+	glint.Range = 5
+	glint.Parent = body
+
+	return model
+end
+
 -- Builds the hotel and returns a table of useful information (see the bottom of this function).
 -- The caller is responsible for parenting hotel.Folder to workspace.
 function HotelBuilder.build()

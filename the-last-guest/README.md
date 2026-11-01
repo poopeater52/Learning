@@ -12,7 +12,7 @@ This folder holds the scripts. **The scripts build the lobby, the hotel, the gho
 2. Open Studio, click **New**, and choose the **Baseplate** template.
 3. Turn on the two panels you'll use all the time: open the **View** tab and click **Explorer** and **Properties** (also **Output**, which shows errors).
 
-## Part 2: Create the 6 scripts
+## Part 2: Create the scripts
 
 In the **Explorer** panel, hover over a folder-like item (for example `ServerScriptService`) and click the small **+** that appears. Pick the script type. Then rename it: click it, press **F2**, type the name, press Enter. **Names are case-sensitive and must match exactly.**
 
@@ -27,7 +27,14 @@ New scripts come with a line like `print("Hello world!")`. **Delete everything i
 | 5 | **Script** | `ServerScriptService` | `GameManager` | `src/ServerScriptService/GameManager.server.luau` |
 | 6 | **LocalScript** | `StarterPlayer` > `StarterPlayerScripts` | `HUD` | `src/StarterPlayer/StarterPlayerScripts/HUD.client.luau` |
 
-> Tip: the 6 scripts must be the *right type* (ModuleScript vs Script vs LocalScript). If you pick the wrong one the game won't start.
+**Added later (so there are now 8 scripts):**
+
+| # | Create this... | Inside... | Name it exactly | Paste the code from |
+|---|---|---|---|---|
+| 7 | **ModuleScript** | `ReplicatedStorage` | `GhostModel` | `src/ReplicatedStorage/GhostModel.luau` |
+| 8 | **LocalScript** | `StarterPlayer` > `StarterPlayerScripts` | `Cutscene` | `src/StarterPlayer/StarterPlayerScripts/Cutscene.client.luau` |
+
+> Tip: the scripts must be the *right type* (ModuleScript vs Script vs LocalScript). If you pick the wrong one the game won't start.
 
 ## Part 3: Play-test it
 
@@ -40,7 +47,9 @@ New scripts come with a line like `print("Hello world!")`. **Delete everything i
    - If the ghost **sees you climb in** (it was chasing you right then), it will come and open that cupboard. Break line of sight *first*, then hide.
    - If you hide well, it can still wander past and **check** cupboards. It's a gamble, and it's riskier on harder difficulties (`HideCheckChance` in `GameConfig`).
    - Only one person fits in each cupboard.
+5c. **Battery:** your flashlight drains while it's on (watch the bar above the Flashlight button). Hunt for **batteries** on tables and beds (hold **E**); each restores half a battery. At 20% the beam flickers, at 0 it dies. Turning it off saves power, and the ghost can only see you from about 60% as far away when you're in the dark, but you won't see it coming either.
 6. Press **R** to see your relic collection.
+7. **Escape** and a short cutscene plays: you drive off in a fast car, and through the rear window the ghost waves goodbye from its window. Then **YOU ESCAPED** appears.
 
 Stop the test with the red **Stop** button.
 
@@ -99,6 +108,11 @@ Config.Music = {
 | Make long chases more frantic | `GhostFrenzyRate` and `GhostFrenzyMax` (how much faster it gets the longer it hunts you) |
 | Change how quickly it speeds up and stops | `GhostAcceleration` |
 | Change how far its "presence" is felt (lights flickering) | `GhostPresenceRadius` |
+| Make the torch last longer or shorter | `BatterySeconds` per difficulty (seconds a full battery lasts) |
+| More or fewer batteries in the hotel | `Batteries` per difficulty (keys + batteries must be 16 or fewer) |
+| Make each battery worth more | `BatteryPickup` (percent restored) |
+| How much darkness hides you from the ghost | `DarkSightScale` (0.6 = it sees you from 60% as far) |
+| Make the escape cutscene longer | `CutsceneTime` (seconds, at least 11) |
 | Make cupboards safer or deadlier | `HideCheckChance` per difficulty (0 = never checked, 1 = always), `HideCheckRadius` |
 | Add a relic | Copy a line in `Config.Relics` and give it a unique `Id` (letters/numbers only) |
 | Shorter lobby wait | `IntermissionTime` |

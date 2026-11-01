@@ -42,6 +42,14 @@ Config.GhostPresenceRadius = 24 -- studs: lamps this close to the ghost flicker 
 Config.HideCheckRadius = 8 -- studs: how close the ghost must get to a cupboard before it may check inside
 Config.HideCheckCooldown = 12 -- seconds before the ghost can check the same cupboard again
 
+-- Flashlight battery ---------------------------------------------------------------------
+Config.BatteryPickup = 50 -- percent of battery one found battery restores
+Config.LowBattery = 20 -- below this percent the beam flickers and a warning appears
+Config.DarkSightScale = 0.6 -- the ghost sees you from this fraction of its normal range when your torch is off or dead
+
+-- Escape cutscene -----------------------------------------------------------------------
+Config.CutsceneTime = 12 -- seconds the "You Escaped" cutscene lasts
+
 -- Music --------------------------------------------------------------------------------
 -- Paste the Roblox asset id of each track here, like "rbxassetid://1234567890".
 -- Leave a track as "" to play nothing for it. See README Part 5 for how to get ids.
@@ -69,6 +77,8 @@ Config.Difficulties = {
 	Easy = {
 		Color = Color3.fromRGB(80, 200, 110),
 		Keys = 3,
+		Batteries = 5, -- batteries hidden in the hotel
+		BatterySeconds = 200, -- seconds a full battery lasts with the torch on
 		TimeLimit = 480,
 		GhostSpeed = 10,
 		GhostSight = 40,
@@ -81,6 +91,8 @@ Config.Difficulties = {
 	Normal = {
 		Color = Color3.fromRGB(240, 190, 60),
 		Keys = 4,
+		Batteries = 4,
+		BatterySeconds = 150,
 		TimeLimit = 390,
 		GhostSpeed = 13,
 		GhostSight = 60,
@@ -93,6 +105,8 @@ Config.Difficulties = {
 	Nightmare = {
 		Color = Color3.fromRGB(220, 50, 50),
 		Keys = 5,
+		Batteries = 3,
+		BatterySeconds = 110,
 		TimeLimit = 330,
 		GhostSpeed = 15,
 		GhostSight = 80,

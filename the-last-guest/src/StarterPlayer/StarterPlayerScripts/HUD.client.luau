@@ -12,6 +12,7 @@ local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
 local state = ReplicatedStorage:WaitForChild("GameState")
 local JumpScare = ReplicatedStorage:WaitForChild("JumpScare")
 local Notify = ReplicatedStorage:WaitForChild("Notify")
+local FlashlightToggle = ReplicatedStorage:WaitForChild("FlashlightToggle")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -242,8 +243,68 @@ local flashlightButton = make("TextButton", {
 }, gui)
 make("UICorner", { CornerRadius = UDim.new(0, 8) }, flashlightButton)
 
+-- The battery meter: a bar above the flashlight button, shown during a night
+local batteryBack = make("Frame", {
+	AnchorPoint = Vector2.new(0, 1),
+	Position = UDim2.new(0, 16, 1, -64),
+	Size = UDim2.new(0, 150, 0, 16),
+	BackgroundColor3 = Color3.fromRGB(20, 14, 14),
+	BorderSizePixel = 0,
+	Visible = false,
+}, gui)
+make("UICorner", { CornerRadius = UDim.new(0, 6) }, batteryBack)
+local batteryFill = make("Frame", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.fromRGB(110, 220, 120),
+	BorderSizePixel = 0,
+}, batteryBack)
+make("UICorner", { CornerRadius = UDim.new(0, 6) }, batteryFill)
+local batteryLabel = make("TextLabel", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundTransparency = 1,
+	TextColor3 = Color3.new(1, 1, 1),
+	TextStrokeTransparency = 0.4,
+	Font = Enum.Font.GothamBold,
+	TextSize = 12,
+	Text = "",
+	ZIndex = 2,
+}, batteryBack)
+
+local function currentBattery()
+	return player:GetAttribute("Battery") or 0
+end
+
+local function refreshBattery()
+	local inNight = player:GetAttribute("InRound") == true
+	batteryBack.Visible = inNight
+	local level = math.clamp(currentBattery(), 0, 100)
+	batteryFill.Size = UDim2.fromScale(level / 100, 1)
+	if level <= Config.LowBattery then
+		batteryFill.BackgroundColor3 = Color3.fromRGB(230, 70, 60)
+	elseif level <= 50 then
+		batteryFill.BackgroundColor3 = Color3.fromRGB(235, 190, 60)
+	else
+		batteryFill.BackgroundColor3 = Color3.fromRGB(110, 220, 120)
+	end
+	batteryLabel.Text = level <= 0 and "DEAD" or string.format("Battery %d%%", math.floor(level))
+end
+player:GetAttributeChangedSignal("Battery"):Connect(refreshBattery)
+player:GetAttributeChangedSignal("InRound"):Connect(refreshBattery)
+refreshBattery()
+
+-- The server decides whether the torch is on (it drains the battery). We flip our copy straight away
+-- so the beam responds instantly, and the server's answer keeps us in step.
+player:GetAttributeChangedSignal("FlashlightOn"):Connect(function()
+	flashlightOn = player:GetAttribute("FlashlightOn") ~= false
+end)
+
 local function toggleFlashlight()
+	if not flashlightOn and currentBattery() <= 0 then
+		toast("Your flashlight is dead. Find a battery.", Color3.fromRGB(235, 80, 80))
+		return
+	end
 	flashlightOn = not flashlightOn
+	FlashlightToggle:FireServer(flashlightOn)
 end
 flashlightButton.Activated:Connect(toggleFlashlight)
 
@@ -358,7 +419,14 @@ RunService.RenderStepped:Connect(function()
 		flashlightRig.Parent = camera
 	end
 	flashlightRig.CFrame = camera.CFrame
-	spotlight.Enabled = flashlightOn and player:GetAttribute("InRound") == true and player:GetAttribute("Hidden") ~= true
+	local battery = currentBattery()
+	spotlight.Enabled = flashlightOn and battery > 0 and player:GetAttribute("InRound") == true and player:GetAttribute("Hidden") ~= true
+	local strength = 0.45 + 0.55 * math.clamp(battery / 100, 0, 1)
+	if battery < Config.LowBattery and math.random() < 0.12 then
+		strength *= 0.15 -- the beam stutters when the battery is nearly flat
+	end
+	spotlight.Brightness = 3 * strength
+	spotlight.Range = 35 + 25 * math.clamp(battery / 100, 0, 1)
 
 	-- Camera shake while the scare plays
 	local character = player.Character

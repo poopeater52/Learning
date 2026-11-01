@@ -24,6 +24,8 @@ end
 
 local JumpScare = makeRemote("JumpScare")
 local Notify = makeRemote("Notify") -- Notify:FireClient(player, text, color)
+local Cutscene = makeRemote("Cutscene") -- Cutscene:FireClient(player, relicText, color): the "You Escaped" cutscene
+local FlashlightToggle = makeRemote("FlashlightToggle") -- the client asks to turn its torch on or off
 
 -- The HUD reads everything about the current night from attributes on this folder.
 local state = Instance.new("Folder")
@@ -37,6 +39,16 @@ local function setState(values)
 end
 
 setState({ Status = "Intermission", Message = "Loading...", Countdown = 0, KeysFound = 0, KeysNeeded = 0, Difficulty = "" })
+
+FlashlightToggle.OnServerEvent:Connect(function(player, on)
+	if typeof(on) ~= "boolean" then
+		return
+	end
+	if on and (player:GetAttribute("Battery") or 0) <= 0 then
+		return -- a dead torch can't be switched on
+	end
+	player:SetAttribute("FlashlightOn", on)
+end)
 
 -- Lighting: very dark, the flashlight and the lamps do the rest -----------------
 
@@ -357,6 +369,8 @@ local function runRound(difficultyName)
 
 		inRound[player] = true
 		player:SetAttribute("InRound", true)
+		player:SetAttribute("Battery", 100)
+		player:SetAttribute("FlashlightOn", true)
 		table.insert(
 			connections,
 			humanoid.Died:Connect(function()
@@ -382,13 +396,24 @@ local function runRound(difficultyName)
 		end
 	end
 
-	notifyPlayers("Night begins on " .. difficultyName .. ". Press F for your flashlight. Cupboards are hiding spots.", GREY)
+	notifyPlayers("Night begins on " .. difficultyName .. ". Press F for your flashlight, but its battery drains. Cupboards are hiding spots.", GREY)
 
 	-- Keys: old brass keys lying on tables and beds in several random rooms
-	local roomOrder = shuffledIndices(#hotel.KeySpots)
+	local allSpots = {}
+	for _, roomSpots in hotel.KeySpots do
+		for _, spot in roomSpots do
+			table.insert(allSpots, spot)
+		end
+	end
+	local spotOrder = shuffledIndices(#allSpots)
+	local nextSpot = 0
+	local function takeSpot() -- each spot is used by at most one key or battery
+		nextSpot += 1
+		return allSpots[spotOrder[nextSpot]]
+	end
+
 	for k = 1, difficulty.Keys do
-		local spots = hotel.KeySpots[roomOrder[k]]
-		local spot = spots[math.random(#spots)]
+		local spot = takeSpot()
 
 		local key = HotelBuilder.newKey()
 		key:PivotTo(CFrame.new(spot) * CFrame.Angles(0, math.random() * math.pi * 2, 0))
@@ -420,6 +445,38 @@ local function runRound(difficultyName)
 			end
 		end)
 		key.Parent = hotel.Folder
+	end
+
+	-- Batteries: the torch drains while it is on, so batteries lie around the hotel too
+	for _ = 1, difficulty.Batteries do
+		local spot = takeSpot()
+		local battery = HotelBuilder.newBattery()
+		battery:PivotTo(CFrame.new(spot + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, math.random() * math.pi * 2, 0))
+
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Pick up"
+		prompt.ObjectText = "Battery"
+		prompt.HoldDuration = 0.3
+		prompt.MaxActivationDistance = 8
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = battery.PrimaryPart
+
+		local collected = false
+		prompt.Triggered:Connect(function(player)
+			if collected or not inRound[player] or hiding[player] then
+				return
+			end
+			collected = true
+			battery:Destroy()
+			local before = player:GetAttribute("Battery") or 0
+			local level = math.min(100, before + Config.BatteryPickup)
+			player:SetAttribute("Battery", level)
+			if before <= 0 then
+				player:SetAttribute("FlashlightOn", true) -- bring a dead torch back to life
+			end
+			Notify:FireClient(player, string.format("Battery found! Flashlight at %d%%", math.floor(level)), GOLD)
+		end)
+		battery.Parent = hotel.Folder
 	end
 
 	-- Cupboards: climb in to hide. The doors shut and the ghost can't see you through them.
@@ -491,8 +548,29 @@ local function runRound(difficultyName)
 	-- Main loop of the night
 	local endTime = os.clock() + difficulty.TimeLimit
 	local result
+	local lastTick = os.clock()
 	while true do
 		task.wait(0.25)
+		local dt = os.clock() - lastTick
+		lastTick = os.clock()
+
+		-- The torch drains while it is switched on (not while you are hiding)
+		for _, player in participants do
+			if inRound[player] and not hiding[player] and player:GetAttribute("FlashlightOn") then
+				local before = player:GetAttribute("Battery") or 0
+				if before > 0 then
+					local after = math.max(0, math.floor((before - 100 / difficulty.BatterySeconds * dt) * 10) / 10)
+					player:SetAttribute("Battery", after)
+					if before > Config.LowBattery and after <= Config.LowBattery then
+						Notify:FireClient(player, "Flashlight battery is low!", RED)
+					end
+					if after <= 0 then
+						player:SetAttribute("FlashlightOn", false)
+						Notify:FireClient(player, "Your flashlight died. Find a battery...", RED)
+					end
+				end
+			end
+		end
 
 		local timeLeft = math.ceil(endTime - os.clock())
 		state:SetAttribute("Countdown", math.max(timeLeft, 0))
@@ -518,11 +596,17 @@ local function runRound(difficultyName)
 								bestColor = Config.Rarities[relic.Rarity].Color
 							end
 						end
-						local text = "You escaped!"
+						local relicText = ""
 						if #lines > 0 then
-							text ..= " Relics found: " .. table.concat(lines, ", ")
+							relicText = "Relics found: " .. table.concat(lines, ", ")
 						end
-						Notify:FireClient(player, text, bestColor)
+						-- The cutscene plays on their screen; the toast follows once it has finished
+						Cutscene:FireClient(player, relicText, bestColor)
+						task.delay(Config.CutsceneTime, function()
+							if player.Parent then
+								Notify:FireClient(player, "You escaped! " .. relicText, bestColor)
+							end
+						end)
 					end
 				end
 			end
@@ -555,6 +639,8 @@ local function runRound(difficultyName)
 	end
 	for _, player in participants do
 		leaveCupboard(player)
+		player:SetAttribute("Battery", nil)
+		player:SetAttribute("FlashlightOn", nil)
 		if inRound[player] then
 			markOut(player)
 			sendToLobby(player)
@@ -595,6 +681,8 @@ local function recoverFromError()
 			root.Anchored = false
 		end
 		hiding[player] = nil
+		player:SetAttribute("Battery", nil)
+		player:SetAttribute("FlashlightOn", nil)
 		player:SetAttribute("Hidden", false)
 		player:SetAttribute("InRound", false)
 		sendToLobby(player)
