@@ -34,6 +34,18 @@ Config.GhostSearchTime = 7 -- seconds it searches where it last saw you
 Config.GhostPatrolSpeedScale = 0.6 -- patrol speed = GhostSpeed * this
 Config.GhostSearchSpeedScale = 0.85
 Config.GhostThinkInterval = 0.35 -- how often the ghost makes decisions
+Config.HideCheckRadius = 8 -- studs: how close the ghost must get to a cupboard before it may check inside
+Config.HideCheckCooldown = 12 -- seconds before the ghost can check the same cupboard again
+
+-- Music --------------------------------------------------------------------------------
+-- Paste the Roblox asset id of each track here, like "rbxassetid://1234567890".
+-- Leave a track as "" to play nothing for it. See README Part 5 for how to get ids.
+Config.Music = {
+	Volume = 0.5,
+	Lobby = "", -- eerie music box: plays in the lobby and between nights
+	Night = "", -- dark ambience: plays during a night
+	Chase = "", -- pounding pulse: fades in as the ghost hunts or gets close
+}
 
 -- Saving ----------------------------------------------------------------------
 -- Saving only works in a PUBLISHED game with "Enable Studio Access to API Services" turned on.
@@ -45,7 +57,8 @@ Config.AutosaveInterval = 90
 -- Keys = keys to find, TimeLimit = seconds, GhostSpeed = studs/second while chasing
 -- (players walk at 16), GhostSight = how far it can see you, GhostHear = how close
 -- you can be before it hears you even through walls, HuntChance = how often it
--- walks straight toward a player instead of wandering, RelicRolls = relics won on escape.
+-- walks straight toward a player instead of wandering, HideCheckChance = chance it opens a cupboard
+-- it walks past with someone hiding inside, RelicRolls = relics won on escape.
 Config.DifficultyOrder = { "Easy", "Normal", "Nightmare" }
 Config.Difficulties = {
 	Easy = {
@@ -56,6 +69,7 @@ Config.Difficulties = {
 		GhostSight = 40,
 		GhostHear = 9,
 		HuntChance = 0,
+		HideCheckChance = 0.2,
 		RelicRolls = 1,
 		RarityWeights = { Common = 70, Uncommon = 22, Rare = 7, Epic = 1, Legendary = 0.1 },
 	},
@@ -67,6 +81,7 @@ Config.Difficulties = {
 		GhostSight = 60,
 		GhostHear = 12,
 		HuntChance = 0.15,
+		HideCheckChance = 0.4,
 		RelicRolls = 2,
 		RarityWeights = { Common = 50, Uncommon = 30, Rare = 14, Epic = 5, Legendary = 1 },
 	},
@@ -78,6 +93,7 @@ Config.Difficulties = {
 		GhostSight = 80,
 		GhostHear = 15,
 		HuntChance = 0.35,
+		HideCheckChance = 0.6,
 		RelicRolls = 3,
 		RarityWeights = { Common = 30, Uncommon = 30, Rare = 24, Epic = 12, Legendary = 4 },
 	},

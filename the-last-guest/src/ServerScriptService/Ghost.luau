@@ -68,6 +68,7 @@ function Ghost.new(hotel, difficultyName, onCatch)
 	self.sightRange = difficulty.GhostSight
 	self.hearRange = difficulty.GhostHear
 	self.huntChance = difficulty.HuntChance
+	self.hideCheckChance = difficulty.HideCheckChance
 
 	self.mode = "patrol" -- "patrol", "chase" or "search"
 	self.waypoints = {}
@@ -86,6 +87,7 @@ function Ghost.new(hotel, difficultyName, onCatch)
 	self.rayParams.FilterDescendantsInstances = { hotel.Folder }
 
 	self.model = buildModel(hotel.GhostSpawn + Vector3.new(0, HOVER, 0))
+	self.model:SetAttribute("Mode", self.mode) -- the music reads this on the client
 	self.model.Parent = workspace
 	return self
 end
@@ -119,7 +121,7 @@ end
 function Ghost:_huntedPlayers()
 	local result = {}
 	for _, player in Players:GetPlayers() do
-		if player:GetAttribute("InRound") then
+		if player:GetAttribute("InRound") and not player:GetAttribute("Hidden") then
 			local character = player.Character
 			local root = character and character:FindFirstChild("HumanoidRootPart")
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -153,6 +155,42 @@ function Ghost:_scan()
 		end
 	end
 	return closestPosition
+end
+
+-- Called when a player climbs into a cupboard. If the ghost is chasing them right now, it saw them go in.
+function Ghost:OnPlayerHid(player, cupboard)
+	if self.mode == "chase" then
+		local offset = cupboard.Center - self.model:GetPivot().Position
+		if Vector3.new(offset.X, 0, offset.Z).Magnitude <= self.sightRange then
+			cupboard.Suspected = true
+			self.lastSeen = cupboard.Center
+			self.lastSeenAt = os.clock()
+		end
+	end
+end
+
+-- If the ghost is near a cupboard with someone inside, it may open it. It always opens the one
+-- it saw you climb into; any other has only a chance (HideCheckChance) each time it passes.
+function Ghost:_checkCupboards()
+	local position = self.model:GetPivot().Position
+	for _, cupboard in self.hotel.Cupboards do
+		local occupant = cupboard.Occupant
+		if occupant and os.clock() >= cupboard.NextCheck then
+			local offset = cupboard.Center - position
+			if Vector3.new(offset.X, 0, offset.Z).Magnitude <= Config.HideCheckRadius then
+				cupboard.NextCheck = os.clock() + Config.HideCheckCooldown
+				if cupboard.Suspected or math.random() < self.hideCheckChance then
+					cupboard.SetOpen(true)
+					self.stunnedUntil = os.clock() + Config.GhostStunTime
+					self.waypoints = {}
+					self.index = 1
+					self.onCatch(occupant)
+					return true
+				end
+			end
+		end
+	end
+	return false
 end
 
 function Ghost:_pathFinished()
@@ -202,6 +240,9 @@ function Ghost:_think()
 	if self.computing or os.clock() < self.stunnedUntil then
 		return
 	end
+	if self:_checkCupboards() then
+		return
+	end
 
 	local seenAt = self:_scan()
 	local destination = nil
@@ -233,6 +274,8 @@ function Ghost:_think()
 			end
 		end
 	end
+
+	self.model:SetAttribute("Mode", self.mode)
 
 	if destination then
 		self:_pathTo(destination)

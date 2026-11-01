@@ -34,8 +34,12 @@ New scripts come with a line like `print("Hello world!")`. **Delete everything i
 1. Click the **Home** tab, then the green **Play** button (or press **F5**). Studio starts a game with you in it.
 2. You spawn in a lobby (floating high above the hotel). Walk onto one of the three coloured **difficulty pads** to vote.
 3. After the countdown you're dropped into the hotel. Press **F** for the flashlight.
-4. Walk into rooms and find the **brass keys** (they sit on tables, hold **E** to pick up). Once you have them all the exit door at the end of the corridor opens (green light). Run through it to escape.
+4. Walk into rooms and find the **old brass keys** lying on tables and beds (hold **E** to pick up). Once you have them all the exit door at the end of the corridor opens (green light). Run through it to escape.
 5. The ghost wakes after ~12 seconds. It wanders slowly, then chases if it sees or hears you. Break line of sight and get away to lose it.
+5b. **Hide:** every room has a **cupboard** on the back wall. Walk up and hold **E** to climb in. The doors close, you can peek out through the slit, and the ghost can't see or hear you. Hold **E** again to get out.
+   - If the ghost **sees you climb in** (it was chasing you right then), it will come and open that cupboard. Break line of sight *first*, then hide.
+   - If you hide well, it can still wander past and **check** cupboards. It's a gamble, and it's riskier on harder difficulties (`HideCheckChance` in `GameConfig`).
+   - Only one person fits in each cupboard.
 6. Press **R** to see your relic collection.
 
 Stop the test with the red **Stop** button.
@@ -52,6 +56,36 @@ Relics are saved between visits, but only in a published game.
 4. Before launch, open `GameConfig` and change `Config.MinPlayers = 1` to `2` (or more) so nights only start with a group.
 5. **Game Settings > Maturity** (content questionnaire): answer honestly. Horror with scares will get a higher rating, which is fine for a 13+ audience.
 
+## Part 5: Add the scary music
+
+The game plays three tracks (all created for this project, in the `audio/` folder next to this README):
+
+| File | When it plays |
+|---|---|
+| `audio/lobby_theme.mp3` | A broken, slightly out-of-tune music box in the lobby and between nights |
+| `audio/night_ambience.mp3` | Dissonant drones, scrapes and distant knocks while you're in the hotel |
+| `audio/chase_layer.mp3` | A pounding pulse that fades in as the ghost hunts you or gets close |
+
+Roblox can only play audio that is **uploaded to Roblox**, so you have to do this once:
+
+1. Download the three `.mp3` files from GitHub (open each file and click **Download raw file**).
+2. In Studio: **View > Asset Manager**, right-click **Audio**, choose **Import** (or **Bulk Import**) and pick the three files. Roblox checks them for a minute or two.
+3. When they appear, right-click each one and choose **Copy ID to Clipboard**.
+4. Open `GameConfig` and paste each ID into `Config.Music`, with `rbxassetid://` in front:
+
+```lua
+Config.Music = {
+	Volume = 0.5,
+	Lobby = "rbxassetid://1234567890",
+	Night = "rbxassetid://2345678901",
+	Chase = "rbxassetid://3456789012",
+}
+```
+
+5. Press **Play**. Leave a track as `""` to turn it off.
+
+**If the upload is blocked:** Roblox may ask you to verify your age/ID before you can upload audio. You can use free music instead: **View > Toolbox > Audio** (set the filter to free / Roblox-made) and search for "horror ambience", "music box" or "chase". Copy the ID of anything you like and paste it into `Config.Music`. Never use music you don't have the rights to.
+
 ## Tuning cheat sheet (all in `GameConfig`)
 
 | I want to... | Change |
@@ -61,6 +95,7 @@ Relics are saved between visits, but only in a published game.
 | More or fewer keys | `Keys` per difficulty (max is 8, one per room) |
 | Bigger hotel | `RoomsPerSide` (more rooms) |
 | Rarer or more generous relics | `RarityWeights` and `RelicRolls` per difficulty |
+| Make cupboards safer or deadlier | `HideCheckChance` per difficulty (0 = never checked, 1 = always), `HideCheckRadius` |
 | Add a relic | Copy a line in `Config.Relics` and give it a unique `Id` (letters/numbers only) |
 | Shorter lobby wait | `IntermissionTime` |
 | Brighter or darker hotel | `Brightness` of lamps in `HotelBuilder`, `Lighting.Ambient` in `GameManager` |
@@ -83,12 +118,12 @@ Open **View > Output**. Red text tells you which script and line has the problem
 ## Honest status
 
 - Written and syntax-checked with the Luau compiler/analyzer, and the relic drop rates were tested. **It has not yet been run inside Roblox Studio**, so expect a few small bugs on first play. Send me the Output errors and what you saw, and I'll fix them.
-- Not in yet: sound effects (the biggest scare multiplier), hiding spots, **trading**, game passes/cosmetics, a proper thumbnail. See the roadmap.
+- Music is included (Part 5) but sound *effects* (footsteps, door creaks, a jump-scare sting) are not in yet. Also not in: **trading**, game passes/cosmetics, a proper thumbnail. See the roadmap.
 
 ## Roadmap (what makes it thrive without pay-to-win)
 
-1. **Sound**: footsteps, a heartbeat when the ghost is near, door creaks, a stinger on the jump scare. Free assets are in the Studio Toolbox (Audio tab).
-2. **Hiding spots**: wardrobes you can hide in (ghost checks them occasionally).
+1. **Sound effects**: footsteps, a heartbeat when the ghost is near, door creaks, a stinger on the jump scare. Free assets are in the Studio Toolbox (Audio tab).
+2. **More hiding**: under beds, behind curtains; a breath-holding meter while hidden.
 3. **Trading** relics between friends (secure two-sided confirm). This is the main "come back" loop.
 4. **Daily/weekly challenges** and a limited-time seasonal relic set (Halloween, winter).
 5. **Lobby relic shelf** so players can display their rarest finds.

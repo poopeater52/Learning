@@ -262,8 +262,37 @@ end
 -- A night ---------------------------------------------------------------------------
 
 local inRound = {} -- [Player] = true while that player is still in the hotel and alive
+local hiding = {} -- [Player] = the cupboard they are hiding in
+
+-- Lets a hiding player out: unfreezes them and swings the doors open.
+local function leaveCupboard(player)
+	local cupboard = hiding[player]
+	if not cupboard then
+		return
+	end
+	hiding[player] = nil
+	cupboard.Occupant = nil
+	cupboard.Suspected = false
+	if cupboard.Prompt and cupboard.Prompt.Parent then
+		cupboard.Prompt.ActionText = "Hide"
+	end
+	player:SetAttribute("Hidden", false)
+
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if root then
+		root.Anchored = false
+	end
+
+	cupboard.SetOpen(true)
+	task.delay(3, function()
+		if not cupboard.Occupant then
+			cupboard.SetOpen(false)
+		end
+	end)
+end
 
 local function markOut(player)
+	leaveCupboard(player)
 	if inRound[player] then
 		inRound[player] = nil
 		player:SetAttribute("InRound", false)
@@ -271,6 +300,7 @@ local function markOut(player)
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	hiding[player] = nil
 	inRound[player] = nil
 end)
 
@@ -352,36 +382,28 @@ local function runRound(difficultyName)
 		end
 	end
 
-	notifyPlayers("Night begins on " .. difficultyName .. ". Press F for your flashlight.", GREY)
+	notifyPlayers("Night begins on " .. difficultyName .. ". Press F for your flashlight. Cupboards are hiding spots.", GREY)
 
-	-- Keys: one in each of several random rooms
-	local spotOrder = shuffledIndices(#hotel.KeySpots)
+	-- Keys: old brass keys lying on tables and beds in several random rooms
+	local roomOrder = shuffledIndices(#hotel.KeySpots)
 	for k = 1, difficulty.Keys do
-		local key = Instance.new("Part")
-		key.Name = "Key"
-		key.Size = Vector3.new(0.5, 0.3, 1.4)
-		key.Anchored = true
-		key.CanCollide = false
-		key.Material = Enum.Material.Metal
-		key.Color = Color3.fromRGB(235, 190, 60)
-		key.Position = hotel.KeySpots[spotOrder[k]]
+		local spots = hotel.KeySpots[roomOrder[k]]
+		local spot = spots[math.random(#spots)]
 
-		local glint = Instance.new("PointLight")
-		glint.Color = Color3.fromRGB(255, 220, 120)
-		glint.Brightness = 0.8
-		glint.Range = 7
-		glint.Parent = key
+		local key = HotelBuilder.newKey()
+		key:PivotTo(CFrame.new(spot) * CFrame.Angles(0, math.random() * math.pi * 2, 0))
 
 		local prompt = Instance.new("ProximityPrompt")
 		prompt.ActionText = "Pick up"
-		prompt.ObjectText = "Brass Key"
+		prompt.ObjectText = "Old Brass Key"
 		prompt.HoldDuration = 0.4
 		prompt.MaxActivationDistance = 8
-		prompt.Parent = key
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = key.PrimaryPart
 
 		local collected = false
 		prompt.Triggered:Connect(function(player)
-			if collected or not inRound[player] then
+			if collected or not inRound[player] or hiding[player] then
 				return
 			end
 			collected = true
@@ -398,6 +420,48 @@ local function runRound(difficultyName)
 			end
 		end)
 		key.Parent = hotel.Folder
+	end
+
+	-- Cupboards: climb in to hide. The doors shut and the ghost can't see you through them.
+	-- It may still open one it passes, and it always checks the one it saw you go into.
+	for _, cupboard in hotel.Cupboards do
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Hide"
+		prompt.ObjectText = "Cupboard"
+		prompt.HoldDuration = 0.3
+		prompt.MaxActivationDistance = 7
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = cupboard.OpenPoint
+		cupboard.Prompt = prompt
+
+		prompt.Triggered:Connect(function(player)
+			if not inRound[player] then
+				return
+			end
+			if cupboard.Occupant == player then
+				leaveCupboard(player)
+			elseif cupboard.Occupant then
+				Notify:FireClient(player, "Someone is already hiding in here.", GREY)
+			elseif not hiding[player] then
+				local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+				if not root then
+					return
+				end
+				cupboard.Suspected = false
+				cupboard.Occupant = player
+				cupboard.NextCheck = os.clock() + 1.5
+				hiding[player] = cupboard
+				cupboard.SetOpen(false)
+				player.Character:PivotTo(cupboard.HidePosition)
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.Anchored = true
+				player:SetAttribute("Hidden", true)
+				prompt.ActionText = "Leave"
+				if ghost then
+					ghost:OnPlayerHid(player, cupboard)
+				end
+			end
+		end)
 	end
 
 	-- The ghost wakes up after a short calm
@@ -490,6 +554,7 @@ local function runRound(difficultyName)
 		connection:Disconnect()
 	end
 	for _, player in participants do
+		leaveCupboard(player)
 		if inRound[player] then
 			markOut(player)
 			sendToLobby(player)
@@ -525,6 +590,12 @@ local function recoverFromError()
 	end
 	table.clear(inRound)
 	for _, player in Players:GetPlayers() do
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		if root then
+			root.Anchored = false
+		end
+		hiding[player] = nil
+		player:SetAttribute("Hidden", false)
 		player:SetAttribute("InRound", false)
 		sendToLobby(player)
 	end

@@ -288,6 +288,29 @@ end
 player:GetAttributeChangedSignal("InRound"):Connect(applyCameraMode)
 applyCameraMode()
 
+-- Hiding hint ------------------------------------------------------------------------
+
+local hideHint = make("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -70),
+	Size = UDim2.new(0, 520, 0, 36),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundTransparency = 0.45,
+	BorderSizePixel = 0,
+	TextColor3 = PAPER,
+	Font = Enum.Font.GothamBold,
+	TextSize = 18,
+	Text = "Hiding... stay quiet. Hold E to leave.",
+	Visible = false,
+}, gui)
+make("UICorner", { CornerRadius = UDim.new(0, 8) }, hideHint)
+
+local function updateHideHint()
+	hideHint.Visible = player:GetAttribute("Hidden") == true
+end
+player:GetAttributeChangedSignal("Hidden"):Connect(updateHideHint)
+updateHideHint()
+
 -- Jump scare ------------------------------------------------------------------------
 
 local scareFrame = make("Frame", {
@@ -335,7 +358,7 @@ RunService.RenderStepped:Connect(function()
 		flashlightRig.Parent = camera
 	end
 	flashlightRig.CFrame = camera.CFrame
-	spotlight.Enabled = flashlightOn and player:GetAttribute("InRound") == true
+	spotlight.Enabled = flashlightOn and player:GetAttribute("InRound") == true and player:GetAttribute("Hidden") ~= true
 
 	-- Camera shake while the scare plays
 	local character = player.Character
@@ -349,4 +372,61 @@ RunService.RenderStepped:Connect(function()
 			humanoid.CameraOffset = Vector3.zero
 		end
 	end
+end)
+
+-- Music -------------------------------------------------------------------------------
+-- Three looping tracks fade in and out: lobby music, night ambience, and a chase layer that
+-- swells as the ghost hunts you or gets close. Set the ids in GameConfig (Config.Music).
+
+local SoundService = game:GetService("SoundService")
+
+local function makeTrack(soundId)
+	if type(soundId) ~= "string" or soundId == "" then
+		return nil
+	end
+	local sound = Instance.new("Sound")
+	sound.SoundId = soundId
+	sound.Looped = true
+	sound.Volume = 0
+	sound.Parent = SoundService
+	sound:Play()
+	return sound
+end
+
+local tracks = {
+	Lobby = makeTrack(Config.Music.Lobby),
+	Night = makeTrack(Config.Music.Night),
+	Chase = makeTrack(Config.Music.Chase),
+}
+
+local function fadeTo(sound, target, dt)
+	if sound then
+		sound.Volume += (target - sound.Volume) * math.min(1, dt * 1.5)
+	end
+end
+
+RunService.Heartbeat:Connect(function(dt)
+	local master = Config.Music.Volume
+	local inNight = player:GetAttribute("InRound") == true
+	local hidden = player:GetAttribute("Hidden") == true
+
+	-- 0 = ghost far away, 1 = ghost right on top of you
+	local chase = 0
+	if inNight then
+		local ghost = workspace:FindFirstChild("Ghost")
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if ghost and root then
+			local distance = (ghost:GetPivot().Position - root.Position).Magnitude
+			if ghost:GetAttribute("Mode") == "chase" and not hidden then
+				chase = 0.4 + 0.6 * math.clamp(1 - distance / 70, 0, 1)
+			else
+				chase = 0.35 * math.clamp(1 - distance / 35, 0, 1) -- nervous when it is nearby
+			end
+		end
+	end
+
+	fadeTo(tracks.Lobby, inNight and 0 or master, dt)
+	fadeTo(tracks.Night, inNight and master * (1 - 0.6 * chase) or 0, dt)
+	fadeTo(tracks.Chase, master * chase, dt)
 end)

@@ -58,6 +58,150 @@ local function addLabel(part, face, text, textColor)
 	label.Parent = gui
 end
 
+local CUPBOARD_COLOR = Color3.fromRGB(70, 44, 30)
+local DOOR_COLOR = Color3.fromRGB(84, 54, 36)
+
+-- A walk-in cupboard against a room's back wall, facing the corridor. Players hide inside it.
+-- Its two doors close behind the player, with a narrow slit at eye height to peek through.
+-- side: 1 = north rooms, -1 = south rooms. backZ: distance of the back wall from the corridor centre.
+local function buildCupboard(parent, cx, side, backZ)
+	local function panel(name, size, x, y, depth)
+		return newPart(parent, name, size, CFrame.new(x, y, side * (backZ - depth)), CUPBOARD_COLOR, Enum.Material.Wood)
+	end
+	panel("CupboardBack", Vector3.new(6, 9, 0.3), cx, 4.5, 0.15)
+	panel("CupboardSide", Vector3.new(0.3, 9, 3), cx - 2.85, 4.5, 1.5)
+	panel("CupboardSide", Vector3.new(0.3, 9, 3), cx + 2.85, 4.5, 1.5)
+	panel("CupboardTop", Vector3.new(6, 0.3, 3), cx, 8.85, 1.5)
+	panel("CupboardBottom", Vector3.new(6, 0.3, 3), cx, 0.15, 1.5)
+
+	-- Two doors hinged on their outer edges. Each door is two pieces with a gap (the peek slit) between them.
+	local doorZ = side * (backZ - 3.13)
+	local hingeY = 4.5
+	local pieces = {}
+	local doorSpecs = {
+		{ hingeX = cx - 2.95, offset = 1.475, dir = side },
+		{ hingeX = cx + 2.95, offset = -1.475, dir = -side },
+	}
+	local pieceSpecs = {
+		{ centerY = 2.4, height = 4.4 }, -- below the slit (the slit runs from y 4.6 to 5.5, about eye height)
+		{ centerY = 7.05, height = 3.1 }, -- above the slit
+	}
+	for _, door in doorSpecs do
+		for _, piece in pieceSpecs do
+			local part = newPart(
+				parent,
+				"CupboardDoor",
+				Vector3.new(2.95, piece.height, 0.25),
+				CFrame.new(door.hingeX + door.offset, piece.centerY, doorZ),
+				DOOR_COLOR,
+				Enum.Material.Wood
+			)
+			-- Put the part's pivot on the hinge, so PivotTo swings it like a real door
+			part.PivotOffset = CFrame.new(-door.offset, hingeY - piece.centerY, 0)
+			table.insert(pieces, { Part = part, Hinge = Vector3.new(door.hingeX, hingeY, doorZ), Dir = door.dir })
+		end
+	end
+
+	-- Invisible spot in front of the doors that the "Hide" prompt attaches to
+	local openPoint = newPart(parent, "OpenPoint", Vector3.new(2, 2, 0.5), CFrame.new(cx, 4.5, side * (backZ - 3.6)), CUPBOARD_COLOR, Enum.Material.Wood)
+	openPoint.Transparency = 1
+	openPoint.CanCollide = false
+	openPoint.CanQuery = false
+
+	local insideZ = side * (backZ - 1.7)
+	local cupboard = {
+		OpenPoint = openPoint,
+		Center = Vector3.new(cx, 0, insideZ), -- floor position inside, used for distance checks
+		HidePosition = CFrame.lookAt(Vector3.new(cx, 3.3, insideZ), Vector3.new(cx, 3.3, insideZ - side * 5)), -- where a hiding player stands, facing out
+		Occupant = nil, -- the player hiding inside, if any
+		Suspected = false, -- true if the ghost saw someone climb in
+		NextCheck = 0, -- the ghost won't check this cupboard again before this time
+		IsOpen = false,
+	}
+
+	local openAmount = 0 -- 0 = shut, 1 = wide open
+	local token = 0
+
+	local function apply(amount)
+		for _, piece in pieces do
+			piece.Part:PivotTo(CFrame.new(piece.Hinge) * CFrame.Angles(0, piece.Dir * math.rad(105) * amount, 0))
+		end
+	end
+
+	function cupboard.SetOpen(open)
+		if cupboard.IsOpen == open then
+			return
+		end
+		cupboard.IsOpen = open
+		token += 1
+		local myToken = token
+		task.spawn(function()
+			local from = openAmount
+			local to = open and 1 or 0
+			local steps = 14
+			for step = 1, steps do
+				if myToken ~= token then
+					return -- a newer open/close took over
+				end
+				openAmount = from + (to - from) * step / steps
+				apply(openAmount)
+				task.wait(0.02)
+			end
+		end)
+	end
+
+	return cupboard
+end
+
+-- A small old brass key lying flat: ring, collar, shaft and teeth. Place it with key:PivotTo(...).
+-- The shaft is the PrimaryPart, so attach prompts to key.PrimaryPart.
+function HotelBuilder.newKey()
+	local model = Instance.new("Model")
+	model.Name = "Key"
+
+	local function piece(name, size, cframe)
+		local part = Instance.new("Part")
+		part.Name = name
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanTouch = false
+		part.Size = size
+		part.CFrame = cframe
+		part.Material = Enum.Material.Metal
+		part.Color = Color3.fromRGB(176, 141, 66)
+		part.Reflectance = 0.12
+		part.TopSurface = Enum.SurfaceType.Smooth
+		part.BottomSurface = Enum.SurfaceType.Smooth
+		part.Parent = model
+		return part
+	end
+
+	local shaft = piece("Shaft", Vector3.new(0.13, 0.13, 1.45), CFrame.new(0, 0, 0.3))
+	model.PrimaryPart = shaft
+
+	-- The round bow (finger loop), made of ten short pieces around a circle
+	local segments, radius = 10, 0.32
+	for i = 1, segments do
+		local angle = (i / segments) * math.pi * 2
+		local position = Vector3.new(math.cos(angle) * radius, 0, -0.75 + math.sin(angle) * radius)
+		local tangent = Vector3.new(-math.sin(angle), 0, math.cos(angle))
+		piece("Bow", Vector3.new(0.16, 0.13, 0.24), CFrame.lookAt(position, position + tangent))
+	end
+
+	piece("Collar", Vector3.new(0.3, 0.17, 0.12), CFrame.new(0, 0, -0.2))
+	piece("BitA", Vector3.new(0.34, 0.11, 0.2), CFrame.new(0.22, 0, 0.88))
+	piece("BitB", Vector3.new(0.24, 0.11, 0.16), CFrame.new(0.17, 0, 0.58))
+
+	-- A faint warm glint so it can be spotted in the dark
+	local glint = Instance.new("PointLight")
+	glint.Color = Color3.fromRGB(255, 220, 140)
+	glint.Brightness = 0.6
+	glint.Range = 6
+	glint.Parent = shaft
+
+	return model
+end
+
 -- Builds the hotel and returns a table of useful information (see the bottom of this function).
 -- The caller is responsible for parenting hotel.Folder to workspace.
 function HotelBuilder.build()
@@ -76,7 +220,8 @@ function HotelBuilder.build()
 	folder.Name = "Hotel"
 
 	local lights = {}
-	local keySpots = {}
+	local cupboards = {}
+	local keySpots = {} -- one entry per room: the places in that room a key can lie
 	local patrolPoints = {}
 
 	-- Floor, carpet and ceiling (floor top surface is at y = 0)
@@ -124,7 +269,7 @@ function HotelBuilder.build()
 			local roomNumber = (side == 1 and 100 or 200) + i
 			addLabel(lintel, side == 1 and Enum.NormalId.Front or Enum.NormalId.Back, tostring(roomNumber), Color3.fromRGB(220, 190, 110))
 
-			-- Furniture: a table (a key can sit on it) and one other piece, on opposite sides of the room
+			-- Furniture: a table and a bed or couch on opposite sides of the room
 			local tableOnLeft = math.random() < 0.5
 			local tableX = tableOnLeft and (xMin + 3.5) or (xMax - 3.5)
 			local otherX = tableOnLeft and (xMax - 3.5) or (xMin + 3.5)
@@ -138,20 +283,26 @@ function HotelBuilder.build()
 				WOOD_COLOR,
 				Enum.Material.Wood
 			)
-			table.insert(keySpots, tableProp.Position + Vector3.new(0, 1.9, 0)) -- just above the table top
 
 			local otherDepth = 10 + math.random() * 6
-			local kind = math.random(3)
 			local size = Vector3.new(4, 2.5, 7) -- bed
 			local name = "Bed"
-			if kind == 2 then
-				size = Vector3.new(4, 8, 3)
-				name = "Wardrobe"
-			elseif kind == 3 then
+			if math.random() < 0.5 then
 				size = Vector3.new(3, 3, 6)
 				name = "Couch"
 			end
-			newPart(folder, name, size, CFrame.new(otherX, size.Y / 2, side * (half + 0.5 + otherDepth)), WOOD_COLOR, Enum.Material.Wood)
+			local otherProp = newPart(folder, name, size, CFrame.new(otherX, size.Y / 2, side * (half + 0.5 + otherDepth)), WOOD_COLOR, Enum.Material.Wood)
+
+			-- A key can lie on top of the table or on top of the bed/couch
+			table.insert(keySpots, {
+				tableProp.Position + Vector3.new((math.random() - 0.5) * 1.4, 1.5 + 0.08, (math.random() - 0.5) * 1.4),
+				otherProp.Position
+					+ Vector3.new((math.random() - 0.5) * (size.X - 1.5), size.Y / 2 + 0.08, (math.random() - 0.5) * (size.Z - 3)),
+			})
+
+			-- A cupboard against the back wall that players can hide in
+			table.insert(cupboards, buildCupboard(folder, cx, side, half + rd))
+			table.insert(patrolPoints, Vector3.new(cx, 0, side * (half + rd - 6))) -- the ghost likes to check these
 
 			-- A dim lamp in the middle of the room
 			addLamp(folder, Vector3.new(cx, h - 0.15, zCenter), 0.8, 18, lights)
@@ -228,7 +379,8 @@ function HotelBuilder.build()
 
 	return {
 		Folder = folder,
-		KeySpots = keySpots, -- positions where a key can be placed (one per room)
+		Cupboards = cupboards, -- one per room; players can hide inside
+		KeySpots = keySpots, -- list of rooms, each a list of positions a key can lie
 		PatrolPoints = patrolPoints, -- floor positions the ghost wanders between
 		PlayerSpawns = playerSpawns,
 		GhostSpawn = ghostSpawn,
