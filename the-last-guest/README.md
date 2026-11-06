@@ -88,7 +88,7 @@ Relics are saved between visits, but only in a published game.
 1. **File > Publish to Roblox**. Give it a name and create it.
 2. **Home > Game Settings > Security** > turn on **Enable Studio Access to API Services**. Save.
 3. Still in **Game Settings > Players**, set **Max players** to what you like (4-8 suits this hotel).
-4. Before launch, open `GameConfig` and change `Config.MinPlayers = 1` to `2` (or more) so nights only start with a group.
+4. Before launch you can raise `Config.MinPlayers` in `GameConfig` (for example to `2`) so nights start by themselves only with a group. With `Config.AllowSoloStart = true` (the default), anyone standing on a difficulty pad can still start a night alone, so nobody gets stuck waiting.
 5. **Game Settings > Maturity** (content questionnaire): answer honestly. Horror with scares will get a higher rating, which is fine for a 13+ audience.
 
 ## Part 5: Add the scary music
@@ -154,7 +154,7 @@ Open **View > Output**. Red text tells you which script and line has the problem
 | `attempt to index nil` / `... is not a valid member` | Pasted into the wrong script type, or the paste was cut off. Re-paste the whole file |
 | Black screen in the lobby | Normal at night! Lobby lamps should light the pads. Check `GameManager` pasted fully |
 | `Could not load data ... 403 / API access` | Turn on **Enable Studio Access to API Services** (Part 4). The game still works without it |
-| Nothing happens after voting | `Config.MinPlayers` is higher than the number of players |
+| The lobby says "Waiting for players (1/2)..." | `Config.MinPlayers` is higher than the number of players. Stand on a difficulty pad to start anyway (`AllowSoloStart`), or lower `MinPlayers` |
 | Anything else | Copy the red error text and send it to me |
 
 ---

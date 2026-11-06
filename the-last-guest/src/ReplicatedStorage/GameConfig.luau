@@ -5,7 +5,8 @@
 local Config = {}
 
 -- Rounds ------------------------------------------------------------------
-Config.MinPlayers = 1 -- 1 so you can test alone. Raise to 2+ when you launch.
+Config.MinPlayers = 1 -- players needed before a night starts by itself. Raise to 2+ when you launch.
+Config.AllowSoloStart = true -- true: someone standing on a difficulty pad can start a night even if MinPlayers isn't met
 Config.IntermissionTime = 25 -- seconds in the lobby (voting time) between nights
 Config.GhostWakeDelay = 12 -- seconds of calm before the ghost wakes up
 Config.EndScreenTime = 8 -- seconds the result is shown

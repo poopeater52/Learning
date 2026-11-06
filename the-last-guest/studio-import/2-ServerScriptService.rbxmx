@@ -249,17 +249,37 @@ local function pickDifficulty()
 	return tied[math.random(#tied)]
 end
 
+-- Enough people to start? Either the server has MinPlayers, or (if AllowSoloStart is on) someone is
+-- standing on a difficulty pad, which means they want to play now.
+local function readyToStart()
+	if #Players:GetPlayers() >= Config.MinPlayers then
+		return true
+	end
+	if Config.AllowSoloStart then
+		for _, count in countVotes() do
+			if count > 0 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function intermission()
 	while true do
-		while #Players:GetPlayers() < Config.MinPlayers do
-			setState({ Status = "Intermission", Countdown = 0, Message = "Waiting for players..." })
+		while not readyToStart() do
+			local text = string.format("Waiting for players (%d/%d)...", #Players:GetPlayers(), Config.MinPlayers)
+			if Config.AllowSoloStart then
+				text ..= " Stand on a door to start now."
+			end
+			setState({ Status = "Intermission", Countdown = 0, Message = text })
 			updateVoteLabels()
-			task.wait(1)
+			task.wait(0.5)
 		end
 
 		local aborted = false
 		for secondsLeft = Config.IntermissionTime, 1, -1 do
-			if #Players:GetPlayers() < Config.MinPlayers then
+			if not readyToStart() then
 				aborted = true
 				break
 			end
