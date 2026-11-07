@@ -21,6 +21,7 @@ GROUPS = [
     ]),
     ("2-ServerScriptService.rbxmx", [
         ("ServerScriptService/GameManager.server.luau", "GameManager", "Script"),
+        ("ServerScriptService/Decor.luau", "Decor", "ModuleScript"),
         ("ServerScriptService/Ghost.luau", "Ghost", "ModuleScript"),
         ("ServerScriptService/HotelBuilder.luau", "HotelBuilder", "ModuleScript"),
         ("ServerScriptService/PlayerData.luau", "PlayerData", "ModuleScript"),

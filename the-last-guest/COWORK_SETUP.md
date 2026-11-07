@@ -8,7 +8,7 @@ Do not write or change any game code yourself. Only move the provided files into
 
 - Work only in **Roblox Studio** and in the **folder the user gave you access to**. Do not open other apps or websites.
 - **Do not publish** the place, change Game Settings, sign in or out, buy anything, or upload anything. If Studio asks you to sign in or shows a popup you did not expect, stop and ask the user.
-- The only things you may delete in Studio are the 8 old game scripts named in Step 3.
+- The only things you may delete in Studio are the 9 old game scripts named in Step 3.
 - If something is not as described below, **stop and tell the user what you see** (and attach a screenshot) instead of guessing.
 - Do not copy and paste code by hand. Use the **Insert from File** import described below.
 
@@ -41,10 +41,10 @@ In **Explorer**, click the small arrow next to each of these to expand it: **Rep
 
 ## Step 3: Remove any old copies (skip this step if there are none)
 
-Look for these 8 scripts. If any exist, delete them (click one, hold **Ctrl** and click the others, press **Delete**):
+Look for these 9 scripts. If any exist, delete them (click one, hold **Ctrl** and click the others, press **Delete**):
 
 - in `ReplicatedStorage`: `GameConfig`, `GhostModel`
-- in `ServerScriptService`: `GameManager`, `Ghost`, `HotelBuilder`, `PlayerData`
+- in `ServerScriptService`: `GameManager`, `Decor`, `Ghost`, `HotelBuilder`, `PlayerData`
 - in `StarterPlayerScripts`: `HUD`, `Cutscene`
 
 Do not delete anything else (leave `Workspace`, `Lighting`, `Baseplate`, etc. alone). A new Baseplate place will not have any of these, which is fine.
@@ -63,13 +63,13 @@ Expand the three places in Explorer. They must show **exactly** this, with no du
 
 ```
 ReplicatedStorage:      GameConfig, GhostModel
-ServerScriptService:    GameManager, Ghost, HotelBuilder, PlayerData
+ServerScriptService:    GameManager, Decor, Ghost, HotelBuilder, PlayerData
 StarterPlayerScripts:   HUD, Cutscene
 ```
 
 (`ReplicatedStorage` may also show other items Studio adds itself; ignore those.)
 
-Also confirm the icons: `GameManager` is a **Script**, `HUD` and `Cutscene` are **LocalScripts**, and the other five are **ModuleScripts**. If a name appears twice, delete the extra and tell the user.
+Also confirm the icons: `GameManager` is a **Script**, `HUD` and `Cutscene` are **LocalScripts**, and the other six are **ModuleScripts**. If a name appears twice, delete the extra and tell the user.
 
 ## Step 6: Test it
 

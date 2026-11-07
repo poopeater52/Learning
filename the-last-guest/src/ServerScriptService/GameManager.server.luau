@@ -8,6 +8,7 @@ local Lighting = game:GetService("Lighting")
 
 local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
 local HotelBuilder = require(script.Parent:WaitForChild("HotelBuilder"))
+local Decor = require(script.Parent:WaitForChild("Decor"))
 local Ghost = require(script.Parent:WaitForChild("Ghost"))
 local PlayerData = require(script.Parent:WaitForChild("PlayerData"))
 
@@ -97,14 +98,14 @@ local function buildLobby()
 
 	part("Floor", Vector3.new(70, 1, 70), center - Vector3.new(0, 0.5, 0), Color3.fromRGB(45, 32, 28), Enum.Material.WoodPlanks)
 
-	-- Invisible walls so nobody falls off the edge
+	-- The lobby walls (wallpaper); they also stop anyone falling off the edge
 	for _, wall in {
-		{ Vector3.new(70, 40, 1), Vector3.new(0, 20, -35.5) },
-		{ Vector3.new(70, 40, 1), Vector3.new(0, 20, 35.5) },
-		{ Vector3.new(1, 40, 72), Vector3.new(-35.5, 20, 0) },
-		{ Vector3.new(1, 40, 72), Vector3.new(35.5, 20, 0) },
+		{ Vector3.new(70, 28, 1), Vector3.new(0, 14, -35.5) },
+		{ Vector3.new(70, 28, 1), Vector3.new(0, 14, 35.5) },
+		{ Vector3.new(1, 28, 72), Vector3.new(-35.5, 14, 0) },
+		{ Vector3.new(1, 28, 72), Vector3.new(35.5, 14, 0) },
 	} do
-		part("EdgeWall", wall[1], center + wall[2], Color3.new(0, 0, 0), Enum.Material.SmoothPlastic, 1)
+		part("LobbyWall", wall[1], center + wall[2], Color3.fromRGB(72, 46, 48), Enum.Material.Fabric)
 	end
 
 	local spawn = Instance.new("SpawnLocation")
@@ -176,6 +177,11 @@ local function buildLobby()
 		label.Parent = billboard
 		labels[name] = label
 	end
+
+	-- Spooky decor: fireplace, reception desk, portraits, cobwebs, candles, pumpkins...
+	local flames = {}
+	Decor.lobby(folder, center, flames)
+	Decor.animate(folder, flames)
 
 	return {
 		SpawnPosition = spawn.Position + Vector3.new(0, 3, 0),

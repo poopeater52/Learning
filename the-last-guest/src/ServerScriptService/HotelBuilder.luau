@@ -5,6 +5,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local Decor = require(script.Parent:WaitForChild("Decor"))
 
 local HotelBuilder = {}
 
@@ -257,6 +258,7 @@ function HotelBuilder.build()
 	folder.Name = "Hotel"
 
 	local lights = {}
+	local flames = {} -- candle and fire lights that flicker (see Decor.animate)
 	local cupboards = {}
 	local keySpots = {} -- one entry per room: the places in that room a key can lie
 	local patrolPoints = {}
@@ -337,6 +339,20 @@ function HotelBuilder.build()
 					+ Vector3.new((math.random() - 0.5) * (size.X - 1.5), size.Y / 2 + 0.08, (math.random() - 0.5) * (size.Z - 3)),
 			})
 
+			-- Spooky props: candles, dolls, windows, portraits, cobwebs, blood...
+			Decor.roomProps(folder, {
+				Cx = cx,
+				XMin = xMin,
+				XMax = xMax,
+				Side = side,
+				Half = half,
+				Depth = rd,
+				Height = h,
+				TableProp = tableProp,
+				OtherProp = otherProp,
+				Flames = flames,
+			})
+
 			-- A cupboard against the back wall that players can hide in
 			table.insert(cupboards, buildCupboard(folder, cx, side, half + rd))
 			table.insert(patrolPoints, Vector3.new(cx, 0, side * (half + rd - 6))) -- the ghost likes to check these
@@ -354,6 +370,19 @@ function HotelBuilder.build()
 		addLamp(folder, Vector3.new(cx, h - 0.15, 0), 1, 24, lights)
 		table.insert(patrolPoints, Vector3.new(cx, 0, 0))
 	end
+
+	-- Decorate the corridor: portraits, candle sconces, a stopped clock, writing on the walls, spiders...
+	Decor.corridor(folder, {
+		Rooms = roomsPerSide,
+		RoomWidth = rw,
+		RoomDepth = rd,
+		CorridorWidth = cw,
+		Height = h,
+		ExitHallLength = exitLen,
+		DoorWidth = doorW,
+		Flames = flames,
+	})
+	Decor.animate(folder, flames)
 
 	-- Exit hall at the east end, behind a locked door
 	newPart(folder, "ExitWallNorth", Vector3.new(exitLen, h, 1), CFrame.new(length + exitLen / 2, h / 2, half), WALL_COLOR, Enum.Material.Fabric)

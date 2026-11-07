@@ -16,7 +16,7 @@ This folder holds the scripts. **The scripts build the lobby, the hotel, the gho
 
 Copying 8 scripts by hand is easy to get wrong (a script with the wrong code in it gives confusing errors). Use the import files instead. They put every script in the right place, with the right name and type.
 
-1. **Start clean.** In Studio's Explorer, delete every old game script: `GameConfig`, `GhostModel` (in `ReplicatedStorage`), `GameManager`, `Ghost`, `HotelBuilder`, `PlayerData` (in `ServerScriptService`), and `HUD`, `Cutscene` (in `StarterPlayer > StarterPlayerScripts`). Click one, hold **Ctrl** and click the rest, then press **Delete**. Leave the other things in Explorer alone.
+1. **Start clean.** In Studio's Explorer, delete every old game script: `GameConfig`, `GhostModel` (in `ReplicatedStorage`), `GameManager`, `Decor`, `Ghost`, `HotelBuilder`, `PlayerData` (in `ServerScriptService`), and `HUD`, `Cutscene` (in `StarterPlayer > StarterPlayerScripts`). Click one, hold **Ctrl** and click the rest, then press **Delete**. Leave the other things in Explorer alone.
 2. **Download the three files** in the `studio-import` folder on GitHub (open each one and click the **download** arrow at the top right of the file). Save them somewhere you can find, like your Desktop.
 3. **Import each one into its own place.** Right-click the place in Explorer, choose **Insert from File...**, and pick the file:
 
@@ -29,7 +29,7 @@ Copying 8 scripts by hand is easy to get wrong (a script with the wrong code in 
 4. Check Explorer now shows exactly this, and nothing twice:
 ```
 ReplicatedStorage:        GameConfig, GhostModel
-ServerScriptService:      GameManager, Ghost, HotelBuilder, PlayerData
+ServerScriptService:      GameManager, Decor, Ghost, HotelBuilder, PlayerData
 StarterPlayerScripts:     HUD, Cutscene
 ```
 5. Press **Play**.
@@ -53,12 +53,13 @@ New scripts come with a line like `print("Hello world!")`. **Delete everything i
 | 5 | **Script** | `ServerScriptService` | `GameManager` | `src/ServerScriptService/GameManager.server.luau` |
 | 6 | **LocalScript** | `StarterPlayer` > `StarterPlayerScripts` | `HUD` | `src/StarterPlayer/StarterPlayerScripts/HUD.client.luau` |
 
-**Added later (so there are now 8 scripts):**
+**Added later (so there are now 9 scripts):**
 
 | # | Create this... | Inside... | Name it exactly | Paste the code from |
 |---|---|---|---|---|
 | 7 | **ModuleScript** | `ReplicatedStorage` | `GhostModel` | `src/ReplicatedStorage/GhostModel.luau` |
 | 8 | **LocalScript** | `StarterPlayer` > `StarterPlayerScripts` | `Cutscene` | `src/StarterPlayer/StarterPlayerScripts/Cutscene.client.luau` |
+| 9 | **ModuleScript** | `ServerScriptService` | `Decor` | `src/ServerScriptService/Decor.luau` |
 
 > Tip: the scripts must be the *right type* (ModuleScript vs Script vs LocalScript). If you pick the wrong one the game won't start.
 
@@ -80,6 +81,18 @@ New scripts come with a line like `print("Hello world!")`. **Delete everything i
 Stop the test with the red **Stop** button.
 
 To test with friends in Studio: **Test** tab > set **Players: 2+** > **Start**.
+
+## Spooky decor (the `Decor` script)
+
+Everything is built from parts, so nothing needs downloading, and none of it blocks players or the ghost.
+
+**Lobby:** wallpapered walls with wood panelling, a ceiling with beams, a fireplace with a real flickering fire (a skull, candles and a tiny pumpkin on the mantel), a reception desk with a bell, a guest book and a board of keys (some missing), a chandelier of candles, grandfather clock, bookshelves, portraits, moonlit windows with torn curtains, a cracked mirror, cobwebs in every corner, glowing jack-o'-lanterns, candle tables, dust-sheet chairs, a worn rug, "THEY NEVER CHECKED OUT" scrawled on the wall with handprints, drifting dust and low mist.
+
+**Hotel corridor:** portraits whose eyes follow nothing (and some that are clawed), candle sconces, a stopped clock and "TURN BACK" at the start, blood pools and drag marks, overturned chairs, spiders hanging from the ceiling, warnings on the walls, dust and floor mist. At the far end, behind the locked door, "THE LAST GUEST NEVER LEFT" waits for you.
+
+**Every room:** it's different each night. Candles on the table, sometimes a skull; a porcelain **doll on the bed or couch, staring at the door**; a moonlit window with curtains; cobwebs; a portrait or a full bookshelf; sometimes blood by the cupboard, writing on the wall, or a chair under a dust sheet.
+
+To change how often things appear, open `Decor` and look at the `math.random() < ...` lines in `Decor.roomProps` and `Decor.corridor` (0.5 = half of rooms, 0.2 = one in five).
 
 ## Part 4: Publish and turn on saving
 
